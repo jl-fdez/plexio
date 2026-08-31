@@ -4,6 +4,14 @@ from plexio.models.stremio import StremioMediaType
 PLEX_TO_STREMIO_MEDIA_TYPE = {
     PlexMediaType.show: StremioMediaType.series,
     PlexMediaType.movie: StremioMediaType.movie,
+    'show': StremioMediaType.series,
+    'movie': StremioMediaType.movie,
+    'series': StremioMediaType.series,
 }
 
-STREMIO_TO_PLEX_MEDIA_TYPE = {v: k for k, v in PLEX_TO_STREMIO_MEDIA_TYPE.items()}
+STREMIO_TO_PLEX_MEDIA_TYPE = {
+    StremioMediaType.series: PlexMediaType.show,
+    StremioMediaType.movie: PlexMediaType.movie,
+    'series': PlexMediaType.show,
+    'movie': PlexMediaType.movie,
+}

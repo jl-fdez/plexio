@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime
 from itertools import chain
 from typing import Annotated
@@ -8,6 +9,8 @@ from redis.asyncio.client import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from yarl import URL
+
+logger = logging.getLogger(__name__)
 
 from plexio import __version__
 from plexio.auth.devices import check_and_register_device
@@ -135,89 +138,108 @@ async def get_customer_manifest(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> StremioManifest:
-    customer, plex_config, is_valid = await get_valid_customer_and_config(customer_token, db)
-    exp_date = parse_expiration_date(customer.expiration_date)
-    exp_date_str = exp_date.strftime('%Y-%m-%d')
+    try:
+        customer, plex_config, is_valid = await get_valid_customer_and_config(customer_token, db)
+        exp_date = parse_expiration_date(customer.expiration_date)
+        exp_date_str = exp_date.strftime('%Y-%m-%d')
 
-    if not is_valid:
+        if not is_valid:
+            return StremioManifest(
+                id='com.stremio.plexio.customer',
+                version=__version__,
+                description=f'Tu suscripción ({customer.name}) ha expirado el {exp_date_str}. Contacta al administrador para renovar.',
+                name=f'PX Central (Suscripción Vencida - {customer.name})',
+                resources=['stream'],
+                types=[StremioMediaType.movie, StremioMediaType.series],
+                catalogs=[],
+                idPrefixes=['tt', 'plexio'],
+                behaviorHints={'configurable': False, 'configurationRequired': False},
+            )
+
+        # Validar límite de dispositivos
+        try:
+            device_allowed, device_info = await check_and_register_device(customer, request, db)
+            if not device_allowed:
+                return StremioManifest(
+                    id='com.stremio.plexio.customer',
+                    version=__version__,
+                    description=f'¡Límite de Dispositivos Excedido! Tu cuenta de {customer.name} sólo permite {customer.max_devices} dispositivo(s). {device_info}',
+                    name='PX Central (Límite Dispositivos Superado)',
+                    resources=['stream'],
+                    types=[StremioMediaType.movie, StremioMediaType.series],
+                    catalogs=[],
+                    idPrefixes=['tt', 'plexio'],
+                    behaviorHints={'configurable': False, 'configurationRequired': False},
+                )
+        except Exception as dev_err:
+            logger.exception('Error validando dispositivo: %s', dev_err)
+
+        if not plex_config:
+            return StremioManifest(
+                id='com.stremio.plexio.customer',
+                version=__version__,
+                description='Servidor en mantenimiento o no configurado por el administrador.',
+                name='PX Central (Mantenimiento)',
+                resources=['stream'],
+                types=[StremioMediaType.movie, StremioMediaType.series],
+                catalogs=[],
+                idPrefixes=['tt', 'plexio'],
+                behaviorHints={'configurable': False, 'configurationRequired': False},
+            )
+
+        config = build_addon_configuration(plex_config)
+        catalogs = []
+        for section in config.sections:
+            media_type = PLEX_TO_STREMIO_MEDIA_TYPE.get(section.type)
+            if not media_type:
+                continue
+            catalogs.append(
+                StremioCatalogManifest(
+                    id=section.key,
+                    type=media_type,
+                    name=f'{section.title} | {config.server_name}',
+                    extra=[
+                        {'name': 'skip', 'isRequired': False},
+                        {'name': 'search', 'isRequired': False},
+                        {'name': 'sort', 'options': list(SORT_OPTIONS.keys())},
+                    ],
+                ),
+            )
+
         return StremioManifest(
             id='com.stremio.plexio.customer',
             version=__version__,
-            description=f'Tu suscripción ({customer.name}) ha expirado el {exp_date_str}. Contacta al administrador para renovar.',
-            name=f'PX Central (Suscripción Vencida - {customer.name})',
+            description=f'PX Central - Suscripción activa de {customer.name} (Válido hasta: {exp_date_str} • Max {customer.max_devices} Disp.)',
+            name=f'PX Central ({config.server_name})',
+            resources=[
+                'stream',
+                'catalog',
+                {
+                    'name': 'meta',
+                    'types': ['movie', 'series'],
+                    'idPrefixes': ['plexio'],
+                },
+            ],
+            types=[StremioMediaType.movie, StremioMediaType.series],
+            catalogs=catalogs,
+            idPrefixes=['tt', 'plexio'],
+            behaviorHints={'configurable': False, 'configurationRequired': False},
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception('Error en get_customer_manifest: %s', exc)
+        return StremioManifest(
+            id='com.stremio.plexio.customer',
+            version=__version__,
+            description='Error temporal al conectar con el servidor multimedia.',
+            name='PX Central (Error Temporal)',
             resources=['stream'],
             types=[StremioMediaType.movie, StremioMediaType.series],
             catalogs=[],
             idPrefixes=['tt', 'plexio'],
             behaviorHints={'configurable': False, 'configurationRequired': False},
         )
-
-    # Validar límite de dispositivos
-    device_allowed, device_info = await check_and_register_device(customer, request, db)
-    if not device_allowed:
-        return StremioManifest(
-            id='com.stremio.plexio.customer',
-            version=__version__,
-            description=f'¡Límite de Dispositivos Excedido! Tu cuenta de {customer.name} sólo permite {customer.max_devices} dispositivo(s). {device_info}',
-            name='PX Central (Límite Dispositivos Superado)',
-            resources=['stream'],
-            types=[StremioMediaType.movie, StremioMediaType.series],
-            catalogs=[],
-            idPrefixes=['tt', 'plexio'],
-            behaviorHints={'configurable': False, 'configurationRequired': False},
-        )
-
-    if not plex_config:
-        return StremioManifest(
-            id='com.stremio.plexio.customer',
-            version=__version__,
-            description='Servidor en mantenimiento o no configurado por el administrador.',
-            name='PX Central (Mantenimiento)',
-            resources=['stream'],
-            types=[StremioMediaType.movie, StremioMediaType.series],
-            catalogs=[],
-            idPrefixes=['tt', 'plexio'],
-            behaviorHints={'configurable': False, 'configurationRequired': False},
-        )
-
-    config = build_addon_configuration(plex_config)
-    catalogs = []
-    for section in config.sections:
-        media_type = PLEX_TO_STREMIO_MEDIA_TYPE.get(section.type)
-        if not media_type:
-            continue
-        catalogs.append(
-            StremioCatalogManifest(
-                id=section.key,
-                type=media_type,
-                name=f'{section.title} | {config.server_name}',
-                extra=[
-                    {'name': 'skip', 'isRequired': False},
-                    {'name': 'search', 'isRequired': False},
-                    {'name': 'sort', 'options': list(SORT_OPTIONS.keys())},
-                ],
-            ),
-        )
-
-    return StremioManifest(
-        id='com.stremio.plexio.customer',
-        version=__version__,
-        description=f'PX Central - Suscripción activa de {customer.name} (Válido hasta: {exp_date_str} • Max {customer.max_devices} Disp.)',
-        name=f'PX Central ({config.server_name})',
-        resources=[
-            'stream',
-            'catalog',
-            {
-                'name': 'meta',
-                'types': ['movie', 'series'],
-                'idPrefixes': ['plexio'],
-            },
-        ],
-        types=[StremioMediaType.movie, StremioMediaType.series],
-        catalogs=catalogs,
-        idPrefixes=['tt', 'plexio'],
-        behaviorHints={'configurable': False, 'configurationRequired': False},
-    )
 
 
 @router.get(
