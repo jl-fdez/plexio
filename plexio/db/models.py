@@ -62,7 +62,7 @@ class Customer(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    payments = relationship('PaymentRecord', back_populates='customer', cascade='all, delete-orphan')
+    payments = relationship('PaymentRecord', back_populates='customer')
     devices = relationship('CustomerDevice', back_populates='customer', cascade='all, delete-orphan')
 
 
@@ -85,7 +85,8 @@ class PaymentRecord(Base):
     __tablename__ = 'payment_records'
 
     id = Column(Integer, primary_key=True, index=True)
-    customer_id = Column(Integer, ForeignKey('customers.id', ondelete='CASCADE'), nullable=False)
+    customer_id = Column(Integer, ForeignKey('customers.id', ondelete='SET NULL'), nullable=True, index=True)
+    customer_name = Column(String(255), nullable=True)
     amount = Column(Float, default=0.0)
     currency = Column(String(10), default='USD')
     payment_date = Column(DateTime, default=datetime.utcnow)

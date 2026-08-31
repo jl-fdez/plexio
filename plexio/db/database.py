@@ -73,6 +73,11 @@ def _run_migrations(sync_conn):
         if 'transcode_down' not in existing_cols:
             sync_conn.exec_driver_sql('ALTER TABLE plex_server_configs ADD COLUMN transcode_down BOOLEAN DEFAULT 0')
 
+    if 'payment_records' in existing_tables:
+        existing_cols = {col['name'] for col in inspector.get_columns('payment_records')}
+        if 'customer_name' not in existing_cols:
+            sync_conn.exec_driver_sql('ALTER TABLE payment_records ADD COLUMN customer_name VARCHAR(255)')
+
 
 async def init_db():
     async with engine.begin() as conn:

@@ -391,9 +391,7 @@ export const AdminCustomersPage: FC = () => {
           {[
             { label: 'Todos', value: 'ALL' },
             { label: 'Activos', value: 'ACTIVE' },
-            { label: 'Por Vencer (3d)', value: 'EXPIRING_SOON' },
-            { label: 'Vencidos', value: 'EXPIRED' },
-            { label: 'Suspendidos', value: 'SUSPENDED' },
+            { label: 'Suspendidos (Bloqueados)', value: 'SUSPENDED' },
           ].map((f) => (
             <button
               key={f.value}

@@ -68,9 +68,7 @@ async def get_valid_customer_and_config(
             detail='Cliente o token no encontrado',
         )
 
-    now = datetime.utcnow()
-    exp_date = parse_expiration_date(customer.expiration_date)
-    is_valid = customer.status == 'ACTIVE' and exp_date >= now
+    is_valid = (customer.status == 'ACTIVE')
 
     stmt_cfg = select(PlexServerConfig).order_by(PlexServerConfig.id.asc())
     res_cfg = await db.execute(stmt_cfg)
@@ -147,8 +145,8 @@ async def get_customer_manifest(
             return StremioManifest(
                 id='com.stremio.plexio.customer',
                 version=__version__,
-                description=f'Tu suscripción ({customer.name}) ha expirado el {exp_date_str}. Contacta al administrador para renovar.',
-                name=f'PX Central (Suscripción Vencida - {customer.name})',
+                description=f'El acceso para {customer.name} se encuentra pausado o suspendido. Contacta al administrador para habilitar tu servicio.',
+                name=f'PX Central (Acceso Suspendido - {customer.name})',
                 resources=['stream'],
                 types=[StremioMediaType.movie, StremioMediaType.series],
                 catalogs=[],

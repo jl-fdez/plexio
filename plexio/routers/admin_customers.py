@@ -17,10 +17,10 @@ class CreateCustomerRequest(BaseModel):
     name: str
     contact: str | None = None
     notes: str | None = None
-    expiration_date: datetime
+    expiration_date: datetime | None = None
     max_devices: int = 1
     # Datos del pago inicial opcional
-    register_payment: bool = True
+    register_payment: bool = False
     amount: float = 0.0
     currency: str = 'USD'
     plan_name: str | None = 'Mensual'
@@ -72,14 +72,8 @@ def parse_expiration_date(exp) -> datetime:
 
 
 def compute_customer_status(customer: Customer) -> str:
-    if customer.status == 'SUSPENDED':
+    if customer.status != 'ACTIVE':
         return 'SUSPENDED'
-    now = datetime.utcnow()
-    exp_date = parse_expiration_date(customer.expiration_date)
-    if exp_date < now:
-        return 'EXPIRED'
-    if exp_date <= now + timedelta(days=3):
-        return 'EXPIRING_SOON'
     return 'ACTIVE'
 
 
@@ -95,32 +89,12 @@ async def get_dashboard_stats(
     stmt_total = select(func.count(Customer.id))
     total_customers = (await db.execute(stmt_total)).scalar_one()
 
-    # Clientes activos (status == ACTIVE y expiration_date >= now)
-    stmt_active = select(func.count(Customer.id)).where(
-        Customer.status == 'ACTIVE',
-        Customer.expiration_date >= now,
-    )
+    # Clientes activos (status == ACTIVE)
+    stmt_active = select(func.count(Customer.id)).where(Customer.status == 'ACTIVE')
     active_customers = (await db.execute(stmt_active)).scalar_one()
 
-    # Clientes por vencer (entre now y now + 3 días)
-    stmt_expiring = select(func.count(Customer.id)).where(
-        Customer.status == 'ACTIVE',
-        Customer.expiration_date >= now,
-        Customer.expiration_date <= now + timedelta(days=3),
-    )
-    expiring_soon_customers = (await db.execute(stmt_expiring)).scalar_one()
-
-    # Clientes vencidos
-    stmt_expired = select(func.count(Customer.id)).where(
-        or_(
-            Customer.expiration_date < now,
-            Customer.status == 'EXPIRED',
-        ),
-    )
-    expired_customers = (await db.execute(stmt_expired)).scalar_one()
-
-    # Clientes suspendidos
-    stmt_suspended = select(func.count(Customer.id)).where(Customer.status == 'SUSPENDED')
+    # Clientes suspendidos / inactivos
+    stmt_suspended = select(func.count(Customer.id)).where(Customer.status != 'ACTIVE')
     suspended_customers = (await db.execute(stmt_suspended)).scalar_one()
 
     # Ingresos del mes
@@ -136,8 +110,8 @@ async def get_dashboard_stats(
     return {
         'total_customers': total_customers,
         'active_customers': active_customers,
-        'expiring_soon_customers': expiring_soon_customers,
-        'expired_customers': expired_customers,
+        'expiring_soon_customers': 0,
+        'expired_customers': 0,
         'suspended_customers': suspended_customers,
         'monthly_income': round(float(monthly_income), 2),
         'total_income': round(float(total_income), 2),
@@ -214,6 +188,7 @@ async def create_customer(
             detail='El nombre del cliente es obligatorio.',
         )
 
+    exp_date = payload.expiration_date or (datetime.utcnow() + timedelta(days=3650))
     customer = Customer(
         uuid_token=str(uuid.uuid4()),
         name=payload.name.strip(),
@@ -221,7 +196,7 @@ async def create_customer(
         notes=payload.notes.strip() if payload.notes else None,
         status='ACTIVE',
         start_date=datetime.utcnow(),
-        expiration_date=payload.expiration_date,
+        expiration_date=exp_date,
         max_devices=payload.max_devices,
     )
     db.add(customer)
@@ -231,6 +206,7 @@ async def create_customer(
     if payload.register_payment and payload.amount > 0:
         payment = PaymentRecord(
             customer_id=customer.id,
+            customer_name=customer.name,
             amount=payload.amount,
             currency=payload.currency,
             payment_date=datetime.utcnow(),
@@ -350,6 +326,7 @@ async def renew_customer(
     if payload.amount > 0:
         payment = PaymentRecord(
             customer_id=customer.id,
+            customer_name=customer.name,
             amount=payload.amount,
             currency=payload.currency,
             payment_date=datetime.utcnow(),
@@ -403,8 +380,16 @@ async def delete_customer(
             detail='Cliente no encontrado.',
         )
 
+    # Conservar el historial de pagos: preservar el nombre del cliente y desvincular customer_id
+    stmt_p = select(PaymentRecord).where(PaymentRecord.customer_id == customer.id)
+    res_p = await db.execute(stmt_p)
+    for p in res_p.scalars().all():
+        if not p.customer_name:
+            p.customer_name = customer.name
+        p.customer_id = None
+
     await db.delete(customer)
-    return {'success': True, 'message': 'Cliente eliminado correctamente.'}
+    return {'success': True, 'message': 'Cliente eliminado correctamente (el historial de pagos se conservó).'}
 
 
 @router.get('/payments')
@@ -426,7 +411,7 @@ async def list_recent_payments(
         {
             'id': p.id,
             'customer_id': p.customer_id,
-            'customer_name': p.customer.name if p.customer else 'Cliente Eliminado',
+            'customer_name': p.customer_name or (p.customer.name if p.customer else 'Cliente Eliminado'),
             'amount': p.amount,
             'currency': p.currency,
             'payment_date': p.payment_date,
