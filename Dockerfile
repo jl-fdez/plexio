@@ -15,6 +15,8 @@ FROM unit:1.32.1-python3.11
 
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends mime-types mailcap && rm -rf /var/lib/apt/lists/*
+
 COPY pyproject.toml pyproject.toml
 COPY plexio plexio
 

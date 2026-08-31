@@ -25,8 +25,23 @@
     {
       "action": {
         "share": "/app/frontend$uri",
+        "types": {
+          "text/html": ["html", "htm"],
+          "text/css": "css",
+          "application/javascript": "js",
+          "image/svg+xml": "svg",
+          "image/png": "png",
+          "image/jpeg": ["jpg", "jpeg"],
+          "image/x-icon": "ico",
+          "application/json": "json",
+          "font/woff2": "woff2",
+          "font/woff": "woff"
+        },
         "fallback": {
-          "share": "/app/frontend/index.html"
+          "share": "/app/frontend/index.html",
+          "types": {
+            "text/html": ["html", "htm"]
+          }
         }
       }
     }
