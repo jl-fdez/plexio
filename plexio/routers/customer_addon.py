@@ -3,13 +3,14 @@ from datetime import datetime
 from itertools import chain
 from typing import Annotated
 from aiohttp import ClientSession
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from redis.asyncio.client import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from yarl import URL
 
 from plexio import __version__
+from plexio.auth.devices import check_and_register_device
 from plexio.db.database import get_db
 from plexio.db.models import Customer, PlexServerConfig
 from plexio.dependencies import get_cache, get_http_client
@@ -93,6 +94,7 @@ def build_addon_configuration(plex_config: PlexServerConfig) -> AddonConfigurati
 @router.get('/manifest.json', response_model_exclude_none=True)
 async def get_customer_manifest(
     customer_token: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> StremioManifest:
     customer, plex_config, is_valid = await get_valid_customer_and_config(customer_token, db)
@@ -103,7 +105,22 @@ async def get_customer_manifest(
             id='com.stremio.plexio.customer',
             version=__version__,
             description=f'Tu suscripción ({customer.name}) ha expirado el {exp_date_str}. Contacta al administrador para renovar.',
-            name=f'Plexio (Suscripción Vencida - {customer.name})',
+            name=f'PX Central (Suscripción Vencida - {customer.name})',
+            resources=['stream'],
+            types=[StremioMediaType.movie, StremioMediaType.series],
+            catalogs=[],
+            idPrefixes=['tt', 'plexio'],
+            behaviorHints={'configurable': False, 'configurationRequired': False},
+        )
+
+    # Validar límite de dispositivos
+    device_allowed, device_info = await check_and_register_device(customer, request, db)
+    if not device_allowed:
+        return StremioManifest(
+            id='com.stremio.plexio.customer',
+            version=__version__,
+            description=f'¡Límite de Dispositivos Excedido! Tu cuenta de {customer.name} sólo permite {customer.max_devices} dispositivo(s). {device_info}',
+            name='PX Central (Límite Dispositivos Superado)',
             resources=['stream'],
             types=[StremioMediaType.movie, StremioMediaType.series],
             catalogs=[],
@@ -116,7 +133,7 @@ async def get_customer_manifest(
             id='com.stremio.plexio.customer',
             version=__version__,
             description='Servidor en mantenimiento o no configurado por el administrador.',
-            name='Plexio (Mantenimiento)',
+            name='PX Central (Mantenimiento)',
             resources=['stream'],
             types=[StremioMediaType.movie, StremioMediaType.series],
             catalogs=[],
@@ -144,8 +161,8 @@ async def get_customer_manifest(
     return StremioManifest(
         id='com.stremio.plexio.customer',
         version=__version__,
-        description=f'Plexio - Suscripción activa de {customer.name} (Válido hasta: {exp_date_str})',
-        name=f'Plexio ({config.server_name})',
+        description=f'PX Central - Suscripción activa de {customer.name} (Válido hasta: {exp_date_str} • Max {customer.max_devices} Disp.)',
+        name=f'PX Central ({config.server_name})',
         resources=[
             'stream',
             'catalog',
@@ -174,12 +191,17 @@ async def get_customer_catalog(
     customer_token: str,
     stremio_type: StremioMediaType,
     catalog_id: str,
+    request: Request,
     http: Annotated[ClientSession, Depends(get_http_client)],
     extra: str = '',
     db: AsyncSession = Depends(get_db),
 ) -> StremioCatalog:
     customer, plex_config, is_valid = await get_valid_customer_and_config(customer_token, db)
     if not is_valid or not plex_config:
+        return StremioCatalog(metas=[])
+
+    device_allowed, _ = await check_and_register_device(customer, request, db)
+    if not device_allowed:
         return StremioCatalog(metas=[])
 
     config = build_addon_configuration(plex_config)
@@ -207,12 +229,17 @@ async def get_customer_meta(
     customer_token: str,
     stremio_type: StremioMediaType,
     plex_id: str,
+    request: Request,
     http: Annotated[ClientSession, Depends(get_http_client)],
     db: AsyncSession = Depends(get_db),
 ) -> StremioMetaResponse:
     customer, plex_config, is_valid = await get_valid_customer_and_config(customer_token, db)
     if not is_valid or not plex_config:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    device_allowed, _ = await check_and_register_device(customer, request, db)
+    if not device_allowed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Límite de dispositivos excedido')
 
     if not plex_id.startswith('plexio:'):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -252,6 +279,7 @@ async def get_customer_stream(
     customer_token: str,
     stremio_type: StremioMediaType,
     media_id: str,
+    request: Request,
     http: Annotated[ClientSession, Depends(get_http_client)],
     cache: Annotated[Redis, Depends(get_cache)],
     db: AsyncSession = Depends(get_db),
@@ -260,6 +288,11 @@ async def get_customer_stream(
 
     # BLOQUEO AUTOMÁTICO SI LA SUSCRIPCIÓN EXPIRÓ O ESTÁ SUSPENDIDA
     if not is_valid or not plex_config:
+        return StremioStreamsResponse(streams=[])
+
+    # BLOQUEO AUTOMÁTICO SI EXCEDIO EL LÍMITE DE DISPOSITIVOS
+    device_allowed, _ = await check_and_register_device(customer, request, db)
+    if not device_allowed:
         return StremioStreamsResponse(streams=[])
 
     config = build_addon_configuration(plex_config)

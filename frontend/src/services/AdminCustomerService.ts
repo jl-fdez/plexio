@@ -24,8 +24,18 @@ export interface CustomerItem {
   start_date: string;
   expiration_date: string;
   max_devices: number;
+  devices_count?: number;
   created_at: string;
   total_paid: number;
+}
+
+export interface CustomerDeviceItem {
+  id: number;
+  device_name: string;
+  ip_address: string | null;
+  user_agent: string | null;
+  last_active: string;
+  created_at: string;
 }
 
 export interface CreateCustomerPayload {
@@ -150,3 +160,30 @@ export const getRecentPayments = async (limit = 50): Promise<PaymentItem[]> => {
   });
   return res.data;
 };
+
+export const getCustomerDevices = async (customerId: number): Promise<CustomerDeviceItem[]> => {
+  const res = await axios.get(`${API_BASE}/customers/${customerId}/devices`, {
+    headers: getAuthHeaders(),
+  });
+  return res.data;
+};
+
+export const deleteCustomerDevice = async (
+  customerId: number,
+  deviceId: number,
+): Promise<{ success: boolean; message: string }> => {
+  const res = await axios.delete(`${API_BASE}/customers/${customerId}/devices/${deviceId}`, {
+    headers: getAuthHeaders(),
+  });
+  return res.data;
+};
+
+export const resetCustomerDevices = async (
+  customerId: number,
+): Promise<{ success: boolean; message: string }> => {
+  const res = await axios.delete(`${API_BASE}/customers/${customerId}/devices`, {
+    headers: getAuthHeaders(),
+  });
+  return res.data;
+};
+

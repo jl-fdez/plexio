@@ -63,6 +63,22 @@ class Customer(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     payments = relationship('PaymentRecord', back_populates='customer', cascade='all, delete-orphan')
+    devices = relationship('CustomerDevice', back_populates='customer', cascade='all, delete-orphan')
+
+
+class CustomerDevice(Base):
+    __tablename__ = 'customer_devices'
+
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(Integer, ForeignKey('customers.id', ondelete='CASCADE'), nullable=False, index=True)
+    device_fingerprint = Column(String(128), index=True, nullable=False)
+    device_name = Column(String(255), default='Dispositivo Stremio')
+    ip_address = Column(String(100), nullable=True)
+    user_agent = Column(String(500), nullable=True)
+    last_active = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    customer = relationship('Customer', back_populates='devices')
 
 
 class PaymentRecord(Base):
@@ -79,3 +95,4 @@ class PaymentRecord(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     customer = relationship('Customer', back_populates='payments')
+

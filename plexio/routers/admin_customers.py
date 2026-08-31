@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from plexio.auth.security import get_current_admin
 from plexio.db.database import get_db
-from plexio.db.models import AdminUser, Customer, PaymentRecord
+from plexio.db.models import AdminUser, Customer, CustomerDevice, PaymentRecord
 
 router = APIRouter(prefix='/api/admin', tags=['Admin Customers & Payments'])
 
@@ -141,7 +141,10 @@ async def list_customers(
 ):
     stmt = (
         select(Customer)
-        .options(selectinload(Customer.payments))
+        .options(
+            selectinload(Customer.payments),
+            selectinload(Customer.devices),
+        )
         .order_by(desc(Customer.created_at))
     )
 
@@ -178,6 +181,7 @@ async def list_customers(
                 'start_date': c.start_date,
                 'expiration_date': c.expiration_date,
                 'max_devices': c.max_devices,
+                'devices_count': len(c.devices),
                 'created_at': c.created_at,
                 'total_paid': round(float(total_paid), 2),
             }
@@ -420,3 +424,71 @@ async def list_recent_payments(
         }
         for p in payments
     ]
+
+
+@router.get('/customers/{customer_id}/devices')
+async def list_customer_devices(
+    customer_id: int,
+    admin: AdminUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = (
+        select(CustomerDevice)
+        .where(CustomerDevice.customer_id == customer_id)
+        .order_by(desc(CustomerDevice.last_active))
+    )
+    result = await db.execute(stmt)
+    devices = result.scalars().all()
+
+    return [
+        {
+            'id': d.id,
+            'device_name': d.device_name,
+            'ip_address': d.ip_address,
+            'user_agent': d.user_agent,
+            'last_active': d.last_active,
+            'created_at': d.created_at,
+        }
+        for d in devices
+    ]
+
+
+@router.delete('/customers/{customer_id}/devices/{device_id}')
+async def delete_customer_device(
+    customer_id: int,
+    device_id: int,
+    admin: AdminUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(CustomerDevice).where(
+        CustomerDevice.id == device_id,
+        CustomerDevice.customer_id == customer_id,
+    )
+    result = await db.execute(stmt)
+    device = result.scalar_one_or_none()
+
+    if not device:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail='Dispositivo no encontrado.',
+        )
+
+    await db.delete(device)
+    return {'success': True, 'message': f'Dispositivo {device.device_name} desvinculado correctamente.'}
+
+
+@router.delete('/customers/{customer_id}/devices')
+async def reset_customer_devices(
+    customer_id: int,
+    admin: AdminUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(CustomerDevice).where(CustomerDevice.customer_id == customer_id)
+    result = await db.execute(stmt)
+    devices = result.scalars().all()
+
+    for d in devices:
+        await db.delete(d)
+
+    return {'success': True, 'message': f'Se desvincularon todos los dispositivos ({len(devices)}) del cliente.'}
+
