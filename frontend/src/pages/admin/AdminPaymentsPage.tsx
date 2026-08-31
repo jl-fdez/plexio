@@ -1,5 +1,5 @@
 import { FC, useEffect, useState } from 'react';
-import { CreditCard, DollarSign, RefreshCw } from 'lucide-react';
+import { DollarSign, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PaymentItem, getRecentPayments } from '@/services/AdminCustomerService';
 

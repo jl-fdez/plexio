@@ -1,11 +1,9 @@
 import { FC } from 'react';
 import {
-  Activity,
   CreditCard,
   LayoutDashboard,
   LogOut,
   Server,
-  Tv,
   Users,
 } from 'lucide-react';
 import { Link, Navigate, Outlet, useLocation } from 'react-router-dom';

@@ -1,15 +1,9 @@
 import { FC, useEffect, useState } from 'react';
 import {
-  CheckCircle2,
-  ExternalLink,
-  Layers,
   LogOut,
-  RefreshCw,
   Save,
   Server,
   Trash2,
-  Tv,
-  Wifi,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import useClientIdentifier from '@/hooks/useClientIdentifier';
@@ -38,12 +32,10 @@ export const AdminPlexSettingsPage: FC = () => {
   );
   const [plexUser, setPlexUser] = useState<any>(null);
   const [servers, setServers] = useState<any[]>([]);
-  const [loadingPlex, setLoadingPlex] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
 
   // Configuración actual guardada en DB
   const [savedConfig, setSavedConfig] = useState<SavedPlexConfig | null>(null);
-  const [loadingSaved, setLoadingSaved] = useState(true);
 
   // Campos del formulario
   const [selectedServerName, setSelectedServerName] = useState('');
@@ -57,14 +49,12 @@ export const AdminPlexSettingsPage: FC = () => {
 
   const [saving, setSaving] = useState(false);
   const [testingDiscovery, setTestingDiscovery] = useState(false);
-  const [testingStreaming, setTestingStreaming] = useState(false);
 
   const selectedServer = servers.find((s) => s.name === selectedServerName);
   const availableSections = usePMSSections(discoveryUrl, selectedServer?.accessToken || null);
 
   // Cargar configuración guardada en DB
   const loadSavedConfig = async () => {
-    setLoadingSaved(true);
     try {
       const res = await getSavedPlexConfig();
       if (res.configured && res.config) {
@@ -80,8 +70,6 @@ export const AdminPlexSettingsPage: FC = () => {
       }
     } catch (e) {
       console.error('Error loading saved config:', e);
-    } finally {
-      setLoadingSaved(false);
     }
   };
 
@@ -94,7 +82,6 @@ export const AdminPlexSettingsPage: FC = () => {
     if (!plexToken || !clientIdentifier) return;
 
     const fetchPlexData = async () => {
-      setLoadingPlex(true);
       try {
         const [userData, serversData] = await Promise.all([
           getPlexUser(plexToken, clientIdentifier),
@@ -114,8 +101,6 @@ export const AdminPlexSettingsPage: FC = () => {
         }
       } catch (err) {
         console.error('Error fetching Plex servers:', err);
-      } finally {
-        setLoadingPlex(false);
       }
     };
 

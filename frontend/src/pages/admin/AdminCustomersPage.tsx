@@ -1,14 +1,8 @@
 import { FC, useEffect, useState } from 'react';
 import {
-  AlertCircle,
-  Calendar as CalendarIcon,
-  Check,
-  Clock,
   Copy,
   Edit2,
-  ExternalLink,
   MessageCircle,
-  MoreVertical,
   Pause,
   Play,
   Plus,
@@ -16,7 +10,6 @@ import {
   Search,
   Trash2,
   Tv,
-  User,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/useToast';
@@ -51,7 +44,7 @@ export const AdminCustomersPage: FC = () => {
   const [expirationDate, setExpirationDate] = useState('');
   const [registerPayment, setRegisterPayment] = useState(true);
   const [amount, setAmount] = useState('10.00');
-  const [currency, setCurrency] = useState('USD');
+  const currency = 'USD';
   const [planName, setPlanName] = useState('Mensual');
   const [paymentMethod, setPaymentMethod] = useState('Transferencia');
 
@@ -261,7 +254,6 @@ export const AdminCustomersPage: FC = () => {
   };
 
   const copyStremioLink = (c: CustomerItem) => {
-    const origin = window.location.origin;
     const stremioUrl = `stremio://${window.location.host}/u/${c.uuid_token}/manifest.json`;
     navigator.clipboard.writeText(stremioUrl);
     toast({
