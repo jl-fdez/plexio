@@ -63,7 +63,10 @@ nano .env
 
 Configura principalmente:
 1. `DOMAIN`: Pon tu dominio o subdominio real (ej. `plexio.tudominio.com`).
-2. `JWT_SECRET_KEY`: Genera una clave aleatoria segura ejecutando `openssl rand -hex 32` y pégala aquí.
+2. `HTTP_PORT` / `HTTPS_PORT`: Modifícalos si el puerto 80 o 443 ya están ocupados en tu VPS (ej. `HTTP_PORT=8080`, `HTTPS_PORT=8443`).
+3. `PORT`: Si prefieres exponer Plexio directamente sin el proxy Caddy (ej. `PORT=7777`).
+4. `JWT_SECRET_KEY`: Genera una clave aleatoria segura ejecutando `openssl rand -hex 32` y pégala aquí.
+
 
 Guarda los cambios con `Ctrl + O`, `Enter` y sal con `Ctrl + X`.
 

@@ -8,6 +8,9 @@ services:
       - .env
     volumes:
       - plexio-data:/app/data
+    # Si no usas Caddy o quieres acceso directo por IP:puerto, descomenta la siguiente línea:
+    # ports:
+    #   - "${PORT:-7777}:80"
     depends_on:
       - redis
     networks:
@@ -26,8 +29,9 @@ services:
     image: caddy:alpine
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
+      - "${HTTP_PORT:-8080}:80"
+      - "${HTTPS_PORT:-8443}:443"
+
     environment:
       - DOMAIN=${DOMAIN:-localhost}
     volumes:
