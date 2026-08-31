@@ -60,13 +60,25 @@ class CustomerResponse(BaseModel):
     total_paid: float = 0.0
 
 
+def parse_expiration_date(exp) -> datetime:
+    if isinstance(exp, datetime):
+        return exp
+    if isinstance(exp, str):
+        try:
+            return datetime.fromisoformat(exp.replace('Z', '+00:00')).replace(tzinfo=None)
+        except Exception:
+            return datetime.utcnow()
+    return datetime.utcnow()
+
+
 def compute_customer_status(customer: Customer) -> str:
     if customer.status == 'SUSPENDED':
         return 'SUSPENDED'
     now = datetime.utcnow()
-    if customer.expiration_date < now:
+    exp_date = parse_expiration_date(customer.expiration_date)
+    if exp_date < now:
         return 'EXPIRED'
-    if customer.expiration_date <= now + timedelta(days=3):
+    if exp_date <= now + timedelta(days=3):
         return 'EXPIRING_SOON'
     return 'ACTIVE'
 

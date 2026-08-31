@@ -37,6 +37,17 @@ from plexio.plex.media_server_api import (
 router = APIRouter(prefix='/u/{customer_token}', tags=['Customer Stremio Addon'])
 
 
+def parse_expiration_date(exp) -> datetime:
+    if isinstance(exp, datetime):
+        return exp
+    if isinstance(exp, str):
+        try:
+            return datetime.fromisoformat(exp.replace('Z', '+00:00')).replace(tzinfo=None)
+        except Exception:
+            return datetime.utcnow()
+    return datetime.utcnow()
+
+
 async def get_valid_customer_and_config(
     customer_token: str,
     db: AsyncSession,
@@ -55,7 +66,8 @@ async def get_valid_customer_and_config(
         )
 
     now = datetime.utcnow()
-    is_valid = customer.status == 'ACTIVE' and customer.expiration_date >= now
+    exp_date = parse_expiration_date(customer.expiration_date)
+    is_valid = customer.status == 'ACTIVE' and exp_date >= now
 
     stmt_cfg = select(PlexServerConfig).order_by(PlexServerConfig.id.asc())
     res_cfg = await db.execute(stmt_cfg)
@@ -64,30 +76,56 @@ async def get_valid_customer_and_config(
     return customer, plex_config, is_valid
 
 
-def build_addon_configuration(plex_config: PlexServerConfig) -> AddonConfiguration:
-    sections_raw = json.loads(plex_config.sections_json or '[]')
-    sections = [
-        PlexLibrarySection(
-            key=s['key'],
-            title=s['title'],
-            type=s['type'],
+def build_addon_configuration(plex_config: PlexServerConfig | None) -> AddonConfiguration:
+    if not plex_config:
+        return AddonConfiguration(
+            server_name='Plex Server',
+            access_token='',
+            discovery_url=URL('http://localhost:32400'),
+            streaming_url=URL('http://localhost:32400'),
+            sections=[],
+            include_transcode_original=False,
+            include_transcode_down=False,
+            transcode_down_qualities=[],
+            include_plex_tv=False,
         )
-        for s in sections_raw
-    ]
 
-    qualities_raw = json.loads(plex_config.transcode_qualities_json or '[]')
-    qualities = [Resolution(q) for q in qualities_raw if q in Resolution._value2member_map_]
+    try:
+        sections_raw = json.loads(plex_config.sections_json or '[]')
+    except Exception:
+        sections_raw = []
+
+    sections = []
+    for s in sections_raw:
+        try:
+            sec_type = s.get('type')
+            if sec_type in ('movie', 'show', PlexMediaType.movie, PlexMediaType.show):
+                sections.append(
+                    PlexLibrarySection(
+                        key=str(s['key']),
+                        title=str(s['title']),
+                        type=PlexMediaType(sec_type),
+                    )
+                )
+        except Exception:
+            continue
+
+    try:
+        qualities_raw = json.loads(plex_config.transcode_qualities_json or '[]')
+        qualities = [Resolution(q) for q in qualities_raw if q in Resolution._value2member_map_]
+    except Exception:
+        qualities = []
 
     return AddonConfiguration(
-        server_name=plex_config.server_name,
-        access_token=plex_config.access_token,
-        discovery_url=URL(plex_config.discovery_url),
-        streaming_url=URL(plex_config.streaming_url),
+        server_name=plex_config.server_name or 'Plex Server',
+        access_token=plex_config.access_token or '',
+        discovery_url=URL(plex_config.discovery_url or 'http://localhost:32400'),
+        streaming_url=URL(plex_config.streaming_url or 'http://localhost:32400'),
         sections=sections,
-        include_transcode_original=plex_config.transcode_original,
-        include_transcode_down=plex_config.transcode_down,
+        include_transcode_original=bool(plex_config.transcode_original),
+        include_transcode_down=bool(plex_config.transcode_down),
         transcode_down_qualities=qualities,
-        include_plex_tv=plex_config.include_plex_tv,
+        include_plex_tv=bool(plex_config.include_plex_tv),
     )
 
 
@@ -98,9 +136,10 @@ async def get_customer_manifest(
     db: AsyncSession = Depends(get_db),
 ) -> StremioManifest:
     customer, plex_config, is_valid = await get_valid_customer_and_config(customer_token, db)
+    exp_date = parse_expiration_date(customer.expiration_date)
+    exp_date_str = exp_date.strftime('%Y-%m-%d')
 
     if not is_valid:
-        exp_date_str = customer.expiration_date.strftime('%Y-%m-%d')
         return StremioManifest(
             id='com.stremio.plexio.customer',
             version=__version__,
@@ -144,10 +183,13 @@ async def get_customer_manifest(
     config = build_addon_configuration(plex_config)
     catalogs = []
     for section in config.sections:
+        media_type = PLEX_TO_STREMIO_MEDIA_TYPE.get(section.type)
+        if not media_type:
+            continue
         catalogs.append(
             StremioCatalogManifest(
                 id=section.key,
-                type=PLEX_TO_STREMIO_MEDIA_TYPE[section.type],
+                type=media_type,
                 name=f'{section.title} | {config.server_name}',
                 extra=[
                     {'name': 'skip', 'isRequired': False},
@@ -157,7 +199,6 @@ async def get_customer_manifest(
             ),
         )
 
-    exp_date_str = customer.expiration_date.strftime('%Y-%m-%d')
     return StremioManifest(
         id='com.stremio.plexio.customer',
         version=__version__,
@@ -205,7 +246,12 @@ async def get_customer_catalog(
         return StremioCatalog(metas=[])
 
     config = build_addon_configuration(plex_config)
-    extras = dict(e.split('=') for e in extra.split('&') if e)
+    extras = {}
+    if extra:
+        for item in extra.split('&'):
+            if '=' in item:
+                k, v = item.split('=', 1)
+                extras[k] = v
 
     media = await get_section_media(
         client=http,
