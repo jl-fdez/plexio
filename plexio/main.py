@@ -45,7 +45,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title='Plexio Admin & Stremio Addon API',
+    title='PX Central Admin & Stremio Addon API',
     lifespan=lifespan,
 )
 

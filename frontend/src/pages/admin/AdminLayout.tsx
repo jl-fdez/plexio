@@ -7,6 +7,7 @@ import {
   Users,
 } from 'lucide-react';
 import { Link, Navigate, Outlet, useLocation } from 'react-router-dom';
+import PXLogo from '@/components/PXLogo';
 import { useAdminAuth } from '@/hooks/useAdminAuth';
 
 export const AdminLayout: FC = () => {
@@ -57,19 +58,8 @@ export const AdminLayout: FC = () => {
       <aside className="w-full md:w-64 bg-slate-900/70 border-r border-slate-800/80 backdrop-blur-xl flex flex-col justify-between p-4 shrink-0">
         <div>
           {/* Logo */}
-          <div className="flex items-center gap-3 px-3 py-4 mb-4 border-b border-slate-800/60">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-600/30">
-              PX
-            </div>
-            <div>
-              <div className="font-bold text-base tracking-tight text-white flex items-center gap-1.5">
-                Plexio Admin
-                <span className="text-[10px] bg-indigo-500/20 text-indigo-400 px-1.5 py-0.5 rounded-full border border-indigo-500/30">
-                  PRO
-                </span>
-              </div>
-              <div className="text-xs text-slate-400">Control de Suscripciones</div>
-            </div>
+          <div className="px-3 py-4 mb-4 border-b border-slate-800/60">
+            <PXLogo size="md" showText={true} />
           </div>
 
           {/* Menú de Navegación */}

@@ -1,5 +1,6 @@
 import { FC, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import PXLogo from '@/components/PXLogo';
 import { Button } from '@/components/ui/button';
 import { useAdminAuth } from '@/hooks/useAdminAuth';
 
@@ -50,19 +51,23 @@ export const AdminLoginPage: FC = () => {
       </div>
 
       <div className="relative w-full max-w-md bg-slate-900/90 backdrop-blur-xl border border-slate-800 p-8 rounded-2xl shadow-2xl shadow-black/60">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-500 shadow-lg shadow-indigo-500/30 mb-4">
-            <span className="text-2xl font-bold text-white">PX</span>
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">
+        <div className="text-center mb-8 flex flex-col items-center">
+          <PXLogo size="lg" className="mb-4" />
+          <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-1.5 justify-center">
+            <span>PX</span>
+            <span className="bg-gradient-to-r from-cyan-400 via-indigo-300 to-purple-400 bg-clip-text text-transparent">
+              CENTRAL
+            </span>
+          </h1>
+          <div className="text-xs font-semibold uppercase tracking-widest text-indigo-400 mt-1">
             {setupRequired
               ? 'Configuración Inicial de Administrador'
-              : 'Portal Administrativo Plexio'}
-          </h1>
-          <p className="text-sm text-slate-400 mt-2">
+              : 'Portal de Gestión y Streaming'}
+          </div>
+          <p className="text-xs text-slate-400 mt-2">
             {setupRequired
-              ? 'Crea tu usuario maestro para gestionar el servidor y clientes'
-              : 'Ingresa con tus credenciales de administrador para gestionar tu servicio'}
+              ? 'Crea tu usuario maestro para gestionar servidores Plex y clientes Stremio'
+              : 'Ingresa con tus credenciales de administrador'}
           </p>
         </div>
 
