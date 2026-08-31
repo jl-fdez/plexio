@@ -331,33 +331,14 @@ export const AdminCustomersPage: FC = () => {
     }
   };
 
-  const copyStremioLink = async (c: CustomerItem) => {
-    const stremioUrl = `stremio://${window.location.host}/u/${c.uuid_token}/manifest.json`;
-    const success = await copyTextToClipboard(stremioUrl);
+  const copyManifestLink = async (c: CustomerItem) => {
+    const host = window.location.host;
+    const httpUrl = `http://${host}/u/${c.uuid_token}/manifest.json`;
+    const success = await copyTextToClipboard(httpUrl);
     if (success) {
       toast({
-        title: '¡Enlace de Stremio Copiado!',
-        description: `Enlace copiado para ${c.name}. Puedes enviárselo para instalar con 1 clic.`,
-        variant: 'success',
-        duration: 6000,
-      });
-    } else {
-      toast({
-        title: 'Error al copiar',
-        description: 'Por favor copia el enlace manualmente.',
-        variant: 'destructive',
-      });
-    }
-  };
-
-  const copyHttpsLink = async (c: CustomerItem) => {
-    const origin = window.location.origin;
-    const httpsUrl = `${origin}/u/${c.uuid_token}/manifest.json`;
-    const success = await copyTextToClipboard(httpsUrl);
-    if (success) {
-      toast({
-        title: '¡URL del Manifiesto Copiada!',
-        description: `URL HTTPS copiada: ${httpsUrl}`,
+        title: '¡Enlace HTTP Copiado!',
+        description: `URL HTTP copiada: ${httpUrl}`,
         variant: 'success',
         duration: 6000,
       });
@@ -440,7 +421,7 @@ export const AdminCustomersPage: FC = () => {
                 <th className="px-5 py-3.5">Dispositivos</th>
                 <th className="px-5 py-3.5">Vencimiento</th>
                 <th className="px-5 py-3.5">Total Cobrado</th>
-                <th className="px-5 py-3.5">Enlace Stremio</th>
+                <th className="px-5 py-3.5">Enlace Manifiesto</th>
                 <th className="px-5 py-3.5 text-right">Acciones</th>
               </tr>
             </thead>
@@ -548,25 +529,15 @@ export const AdminCustomersPage: FC = () => {
                       </td>
 
                       <td className="px-5 py-4">
-                        <div className="flex items-center gap-2">
-                          <Button
-                            size="sm"
-                            onClick={() => copyStremioLink(c)}
-                            className="bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 rounded-xl text-xs gap-1.5 py-1 px-3"
-                          >
-                            <Tv className="w-3.5 h-3.5" />
-                            Copiar Enlace
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => copyHttpsLink(c)}
-                            title="Copiar URL HTTPS del Manifiesto"
-                            className="text-slate-400 hover:text-white p-2 rounded-xl"
-                          >
-                            <Copy className="w-3.5 h-3.5" />
-                          </Button>
-                        </div>
+                        <Button
+                          size="sm"
+                          onClick={() => copyManifestLink(c)}
+                          className="bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 rounded-xl text-xs gap-1.5 py-1.5 px-3"
+                          title="Copiar URL HTTP para pegar o instalar en Stremio"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          Copiar Enlace HTTP
+                        </Button>
                       </td>
 
                       <td className="px-5 py-4 text-right">

@@ -51,12 +51,12 @@ const ConfigurationForm: FC<Props> = ({ servers }) => {
     );
 
     const encodedConfiguration = base64_encode(JSON.stringify(configuration));
-    const addonUrl = `${window.location.origin}/${uuidv4()}/${encodedConfiguration}/manifest.json`;
+    const addonUrl = `http://${window.location.host}/${uuidv4()}/${encodedConfiguration}/manifest.json`;
 
     if (event.nativeEvent.submitter.name === 'clipboard') {
       await copyTextToClipboard(addonUrl);
     } else {
-      window.location.href = addonUrl.replace(/https?:\/\//, 'stremio://');
+      await copyTextToClipboard(addonUrl);
     }
   }
 
