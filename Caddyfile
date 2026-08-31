@@ -1,4 +1,4 @@
-{$DOMAIN:localhost} {
+:80 {
     reverse_proxy plexio:80 {
         header_up Host {host}
         header_up X-Real-IP {remote_host}
