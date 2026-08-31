@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/useToast';
+import { copyTextToClipboard } from '@/utils/clipboard';
 import {
   CreateCustomerPayload,
   CustomerDeviceItem,
@@ -330,27 +331,43 @@ export const AdminCustomersPage: FC = () => {
     }
   };
 
-  const copyStremioLink = (c: CustomerItem) => {
+  const copyStremioLink = async (c: CustomerItem) => {
     const stremioUrl = `stremio://${window.location.host}/u/${c.uuid_token}/manifest.json`;
-    navigator.clipboard.writeText(stremioUrl);
-    toast({
-      title: '¡Enlace de Stremio Copiado!',
-      description: `Enlace copiado para ${c.name}. Puedes enviárselo para instalar con 1 clic.`,
-      variant: 'success',
-      duration: 6000,
-    });
+    const success = await copyTextToClipboard(stremioUrl);
+    if (success) {
+      toast({
+        title: '¡Enlace de Stremio Copiado!',
+        description: `Enlace copiado para ${c.name}. Puedes enviárselo para instalar con 1 clic.`,
+        variant: 'success',
+        duration: 6000,
+      });
+    } else {
+      toast({
+        title: 'Error al copiar',
+        description: 'Por favor copia el enlace manualmente.',
+        variant: 'destructive',
+      });
+    }
   };
 
-  const copyHttpsLink = (c: CustomerItem) => {
+  const copyHttpsLink = async (c: CustomerItem) => {
     const origin = window.location.origin;
     const httpsUrl = `${origin}/u/${c.uuid_token}/manifest.json`;
-    navigator.clipboard.writeText(httpsUrl);
-    toast({
-      title: '¡URL del Manifiesto Copiada!',
-      description: `URL HTTPS copiada: ${httpsUrl}`,
-      variant: 'success',
-      duration: 6000,
-    });
+    const success = await copyTextToClipboard(httpsUrl);
+    if (success) {
+      toast({
+        title: '¡URL del Manifiesto Copiada!',
+        description: `URL HTTPS copiada: ${httpsUrl}`,
+        variant: 'success',
+        duration: 6000,
+      });
+    } else {
+      toast({
+        title: 'Error al copiar',
+        description: 'Por favor copia la URL manualmente.',
+        variant: 'destructive',
+      });
+    }
   };
 
   return (

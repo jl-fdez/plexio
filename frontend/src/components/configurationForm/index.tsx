@@ -20,6 +20,7 @@ import { Icons } from '@/components/icons';
 import { Button } from '@/components/ui/button.tsx';
 import { Form } from '@/components/ui/form';
 import usePMSSections from '@/hooks/usePMSSections.tsx';
+import { copyTextToClipboard } from '@/utils/clipboard';
 
 interface Props {
   servers: PlexServer[];
@@ -42,7 +43,7 @@ const ConfigurationForm: FC<Props> = ({ servers }) => {
   const discoveryUrl = form.watch('discoveryUrl');
   const sections = usePMSSections(discoveryUrl, server?.accessToken || null);
 
-  function onSubmit(configuration: any, event: any) {
+  async function onSubmit(configuration: any, event: any) {
     configuration.version = __APP_VERSION__;
     configuration.accessToken = server?.accessToken;
     configuration.sections = configuration.sections.filter((item: any) =>
@@ -53,7 +54,7 @@ const ConfigurationForm: FC<Props> = ({ servers }) => {
     const addonUrl = `${window.location.origin}/${uuidv4()}/${encodedConfiguration}/manifest.json`;
 
     if (event.nativeEvent.submitter.name === 'clipboard') {
-      navigator.clipboard.writeText(addonUrl);
+      await copyTextToClipboard(addonUrl);
     } else {
       window.location.href = addonUrl.replace(/https?:\/\//, 'stremio://');
     }
