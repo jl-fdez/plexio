@@ -30,10 +30,10 @@ export const IncludeTranscodeDownFields: FC<Props> = ({ form }) => {
           <FormItem className="items-center justify-between flex flex-row rounded-lg border p-2">
             <div className="space-y-0.5">
               <FormLabel className="text-base">
-                Include Transcoded Streams with Lower Resolutions
+                Incluir Streams Transcodificados en Resoluciones Menores
               </FormLabel>
               <FormDescription>
-                Include transcoded streams with lower qualities.
+                Incluir transmisiones transcodificadas con menor calidad/resolución.
               </FormDescription>
             </div>
             <FormControl>
@@ -50,9 +50,9 @@ export const IncludeTranscodeDownFields: FC<Props> = ({ form }) => {
           render={() => (
             <FormItem className="rounded-lg border p-2">
               <div className="mb-4">
-                <FormLabel className="text-base">Lower Resolutions</FormLabel>
+                <FormLabel className="text-base">Resoluciones Menores</FormLabel>
                 <FormDescription>
-                  Select transcoding resolutions to include.
+                  Selecciona las resoluciones de transcodificación a incluir.
                 </FormDescription>
               </div>
               {transcodeDownQualities.map((item) => (

@@ -1,0 +1,50 @@
+services:
+  plexio:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - plexio-data:/app/data
+    depends_on:
+      - redis
+    networks:
+      - plexio-net
+
+  redis:
+    image: redis:alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    networks:
+      - plexio-net
+
+  caddy:
+    image: caddy:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - plexio
+    networks:
+      - plexio-net
+
+volumes:
+  plexio-data:
+  redis-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  plexio-net:
+    driver: bridge

@@ -17,7 +17,11 @@ const ProtectedFormPage: FC<Props> = ({ plexToken, setPlexToken }) => {
     <div className="mx-auto max-w-2xl">
       <Toaster />
       <Header plexUser={plexUser} setPlexToken={setPlexToken}></Header>
-      <ProtectedForm plexToken={plexToken} plexUser={plexUser} />
+      <ProtectedForm
+        plexToken={plexToken}
+        plexUser={plexUser}
+        setPlexToken={setPlexToken}
+      />
       <FAQ />
     </div>
   );

@@ -47,7 +47,7 @@ async def get_manifest(
     installation_id: str | None = None,
 ) -> StremioManifest:
     catalogs = []
-    description = 'Play movies and series from plex.tv.'
+    description = 'Reproduce películas y series desde tu servidor de Plex.'
     name = 'Plexio'
 
     if configuration is not None:
@@ -66,7 +66,7 @@ async def get_manifest(
             )
 
         name += f' ({configuration.server_name})'
-        description += f' Your installation ID: {installation_id}'
+        description += f' Tu ID de instalación: {installation_id}'
 
     return StremioManifest(
         id='com.stremio.plexio',

@@ -6,8 +6,13 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from plexio.cache import init_cache
+from plexio.db.database import init_db
 from plexio.routers.addon import router as addon_router
+from plexio.routers.admin_auth import router as admin_auth_router
+from plexio.routers.admin_customers import router as admin_customers_router
+from plexio.routers.admin_plex import router as admin_plex_router
 from plexio.routers.configuration import router as configuration_router
+from plexio.routers.customer_addon import router as customer_addon_router
 from plexio.settings import settings
 
 
@@ -24,6 +29,7 @@ sentry_sdk.init(before_send=before_send)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await init_db()
     plex_client = aiohttp.ClientSession(
         headers={'accept': 'application/json'},
     )
@@ -39,6 +45,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
+    title='Plexio Admin & Stremio Addon API',
     lifespan=lifespan,
 )
 
@@ -50,5 +57,12 @@ app.add_middleware(
     allow_headers=['*'],
 )
 
+# Routers de administración
+app.include_router(admin_auth_router)
+app.include_router(admin_plex_router)
+app.include_router(admin_customers_router)
+
+# Routers de Stremio
+app.include_router(customer_addon_router)
 app.include_router(addon_router)
 app.include_router(configuration_router)

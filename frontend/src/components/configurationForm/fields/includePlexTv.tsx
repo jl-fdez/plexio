@@ -22,9 +22,9 @@ export const IncludePlexTvField: FC<Props> = ({ form }) => {
       render={({ field }) => (
         <FormItem className="items-center justify-between flex flex-row rounded-lg border p-2">
           <div className="space-y-0.5">
-            <FormLabel className="text-base">Include Plex.tv URL</FormLabel>
+            <FormLabel className="text-base">Incluir enlace a Plex.tv</FormLabel>
             <FormDescription>
-              Include a stream redirecting to the Plex app or website.
+              Incluir un enlace de reproducción externa que redirige a la app o web oficial de Plex.
             </FormDescription>
           </div>
           <FormControl>

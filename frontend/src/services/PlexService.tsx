@@ -7,15 +7,24 @@ export const createAuthPin = async (
   clientIdentifier: string,
 ): Promise<AuthPin> => {
   try {
-    const response = await axios.postForm(`${PLEX_API_URL}/pins`, {
-      strong: 'true',
-      'X-Plex-Product': PLEX_PRODUCT_NAME,
-      'X-Plex-Client-Identifier': clientIdentifier,
-    });
+    const response = await axios.post(
+      `${PLEX_API_URL}/pins`,
+      {},
+      {
+        params: {
+          strong: false,
+        },
+        headers: {
+          'X-Plex-Product': PLEX_PRODUCT_NAME,
+          'X-Plex-Client-Identifier': clientIdentifier,
+          Accept: 'application/json',
+        },
+      },
+    );
 
     return response.data;
   } catch (error) {
-    console.error('Error fetching users:', error);
+    console.error('Error creating PIN:', error);
     throw error;
   }
 };
@@ -23,18 +32,22 @@ export const createAuthPin = async (
 export const getAuthToken = async (
   authPin: AuthPin,
   clientIdentifier: string,
-): Promise<string> => {
+): Promise<string | null> => {
   try {
     const response = await axios.get(`${PLEX_API_URL}/pins/${authPin.id}`, {
       params: {
         code: authPin.code,
         'X-Plex-Client-Identifier': clientIdentifier,
       },
+      headers: {
+        'X-Plex-Client-Identifier': clientIdentifier,
+        Accept: 'application/json',
+      },
     });
-    return response.data.authToken;
+    return response.data?.authToken || null;
   } catch (error) {
-    console.error('Error auth token:', error);
-    throw error;
+    console.error('Error fetching auth token:', error);
+    return null;
   }
 };
 
@@ -48,6 +61,12 @@ export const getPlexUser = async (
         'X-Plex-Product': PLEX_PRODUCT_NAME,
         'X-Plex-Client-Identifier': clientIdentifier,
         'X-Plex-Token': token,
+      },
+      headers: {
+        'X-Plex-Product': PLEX_PRODUCT_NAME,
+        'X-Plex-Client-Identifier': clientIdentifier,
+        'X-Plex-Token': token,
+        Accept: 'application/json',
       },
     });
 
@@ -74,15 +93,23 @@ export const getPlexServers = async (
         'X-Plex-Token': token,
         'X-Plex-Client-Identifier': clientIdentifier,
       },
+      headers: {
+        'X-Plex-Product': PLEX_PRODUCT_NAME,
+        'X-Plex-Client-Identifier': clientIdentifier,
+        'X-Plex-Token': token,
+        Accept: 'application/json',
+      },
     });
 
     if (!response.data || !Array.isArray(response.data)) {
-      throw new Error('Invalid response from server');
+      throw new Error('Respuesta inválida del servidor de Plex');
     }
 
     return response.data.filter(
       (server: any) =>
-        server.provides.includes('server') && 'accessToken' in server,
+        server.provides &&
+        server.provides.includes('server') &&
+        'accessToken' in server,
     );
   } catch (error) {
     console.error('Error fetching Plex servers:', error);

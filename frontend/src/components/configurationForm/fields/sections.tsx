@@ -24,9 +24,9 @@ export const SectionsField: FC<Props> = ({ form, sections }) => {
       render={() => (
         <FormItem className="rounded-lg border p-2">
           <div className="mb-4">
-            <FormLabel className="text-base">Sections</FormLabel>
+            <FormLabel className="text-base">Bibliotecas / Secciones</FormLabel>
             <FormDescription>
-              Select the Plex library sections to access in Stremio.
+              Selecciona las secciones de la biblioteca de Plex a las que deseas acceder en Stremio.
             </FormDescription>
           </div>
           {sections.length > 0 ? (
@@ -74,10 +74,9 @@ export const SectionsField: FC<Props> = ({ form, sections }) => {
             <div className="flex flex-col items-center justify-center">
               <div className="w-16 h-16 rounded-full animate-spin border-t-4 border-muted-foreground" />
               <span className="mt-4 text-lg text-muted-foreground text-center">
-                Loading sections from the server using the selected discovery
-                URL.
+                Cargando secciones desde el servidor usando la URL de descubrimiento seleccionada...
                 <br />
-                If this takes too long, try selecting a different discovery URL.
+                Si tarda demasiado, prueba seleccionando otra URL de descubrimiento.
               </span>
             </div>
           )}

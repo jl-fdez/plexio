@@ -88,7 +88,7 @@ const ConfigurationForm: FC<Props> = ({ servers }) => {
             type="submit"
             name="install"
           >
-            Install
+            Instalar Addon
           </Button>
         </div>
       </form>

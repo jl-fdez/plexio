@@ -23,10 +23,10 @@ export const IncludeTranscodeOriginalField: FC<Props> = ({ form }) => {
         <FormItem className="items-center justify-between flex flex-row rounded-lg border p-2">
           <div className="space-y-0.5">
             <FormLabel className="text-base">
-              Include Transcoded Stream
+              Incluir Stream Transcodificado (Original)
             </FormLabel>
             <FormDescription>
-              Include a transcoded stream with original quality in HLS format.
+              Incluir una transmisión transcodificada con calidad original en formato HLS.
             </FormDescription>
           </div>
           <FormControl>

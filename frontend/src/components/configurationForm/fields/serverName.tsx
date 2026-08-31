@@ -30,7 +30,7 @@ export const ServerNameField: FC<Props> = ({ form, servers }) => {
       name="serverName"
       render={({ field }) => (
         <FormItem className="rounded-lg border p-2">
-          <FormLabel className="text-base">Plex Server</FormLabel>
+          <FormLabel className="text-base">Servidor Plex</FormLabel>
           <Select
             onValueChange={(s) => {
               form.resetField('discoveryUrl', { defaultValue: '' });
@@ -42,7 +42,7 @@ export const ServerNameField: FC<Props> = ({ form, servers }) => {
           >
             <FormControl>
               <SelectTrigger>
-                <SelectValue placeholder="Select a server name" />
+                <SelectValue placeholder="Selecciona un servidor" />
               </SelectTrigger>
             </FormControl>
             <SelectContent>
@@ -50,7 +50,7 @@ export const ServerNameField: FC<Props> = ({ form, servers }) => {
                 <SelectItem key={index} value={s.name}>
                   {!s.owned && (
                     <Badge className="mr-1.5" variant="secondary">
-                      shared
+                      compartido
                     </Badge>
                   )}
                   {s.name}
@@ -58,7 +58,7 @@ export const ServerNameField: FC<Props> = ({ form, servers }) => {
               ))}
             </SelectContent>
           </Select>
-          <FormDescription>Choose your Plex server.</FormDescription>
+          <FormDescription>Elige tu servidor de Plex.</FormDescription>
           <FormMessage />
         </FormItem>
       )}

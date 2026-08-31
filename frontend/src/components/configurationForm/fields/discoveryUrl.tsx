@@ -40,17 +40,17 @@ export const DiscoveryUrlField: FC<Props> = ({ form, server }) => {
       const ipPort = parseUrlToIpPort(discoveryUrl);
       if (alive) {
         toast({
-          title: 'Discovery URL Test Successful!',
-          description: `Plexio backend successfully accessed your server at ${ipPort}.`,
+          title: '¡Prueba de URL de Descubrimiento Exitosa!',
+          description: `El backend de Plexio se conectó correctamente a tu servidor en ${ipPort}.`,
           variant: 'success',
           duration: 30 * 1000,
         });
       } else {
         toast({
-          title: 'Discovery URL Test Failed!',
-          description: `Plexio backend could not access your server at ${ipPort}. 
-                        Please try again or select another URL. Ensure your server is accessible publicly, 
-                        or consider using Plex Relay if the server is behind a firewall.`,
+          title: '¡Error en la Prueba de URL de Descubrimiento!',
+          description: `El backend de Plexio no pudo acceder a tu servidor en ${ipPort}. 
+                        Inténtalo de nuevo o selecciona otra URL. Asegúrate de que tu servidor sea accesible públicamente, 
+                        o considera usar Plex Relay si el servidor está detrás de un firewall o CGNAT.`,
           variant: 'destructive',
           duration: 30 * 1000,
         });
@@ -64,7 +64,7 @@ export const DiscoveryUrlField: FC<Props> = ({ form, server }) => {
       name="discoveryUrl"
       render={({ field }) => (
         <FormItem className="rounded-lg border p-2">
-          <FormLabel className="text-base">Discovery URL</FormLabel>
+          <FormLabel className="text-base">URL de Descubrimiento (Discovery URL)</FormLabel>
           <div className="flex">
             <Select
               onValueChange={field.onChange}
@@ -73,7 +73,7 @@ export const DiscoveryUrlField: FC<Props> = ({ form, server }) => {
             >
               <FormControl>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select a discovery url" />
+                  <SelectValue placeholder="Selecciona una URL de descubrimiento" />
                 </SelectTrigger>
               </FormControl>
               {server.connections.filter((conn: any) => !conn.local).length >
@@ -85,7 +85,7 @@ export const DiscoveryUrlField: FC<Props> = ({ form, server }) => {
                       <SelectItem key={index} value={conn.uri}>
                         {conn.relay && (
                           <Badge className="mr-1.5" variant="secondary">
-                            relay
+                            retransmisión
                           </Badge>
                         )}
                         {`${conn.address}:${conn.port}`}
@@ -103,12 +103,12 @@ export const DiscoveryUrlField: FC<Props> = ({ form, server }) => {
               {testInProgress ? (
                 <div className="w-5 h-5 rounded-full animate-spin border-t-2" />
               ) : (
-                'Test'
+                'Probar'
               )}
             </Button>
           </div>
           <FormDescription>
-            Select the public URL of your Plex server.
+            Selecciona la URL pública o remota de tu servidor Plex.
           </FormDescription>
           <FormMessage />
         </FormItem>

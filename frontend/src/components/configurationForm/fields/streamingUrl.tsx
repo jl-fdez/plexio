@@ -40,19 +40,19 @@ export const StreamingUrlField: FC<Props> = ({ form, server }) => {
       const ipPort = parseUrlToIpPort(streamingUrl);
       if (alive) {
         toast({
-          title: 'Streaming URL Test Successful!',
-          description: `Your device successfully accessed the Streaming URL at ${ipPort}.
-                        Streaming will work if accessed from this device.`,
+          title: '¡Prueba de URL de Streaming Exitosa!',
+          description: `Tu dispositivo accedió correctamente a la URL de Streaming en ${ipPort}.
+                        La reproducción funcionará si se accede desde este dispositivo o red.`,
           variant: 'success',
           duration: 30 * 1000,
         });
       } else {
         toast({
-          title: 'Streaming URL Test Failed!',
-          description: `Your device could not access the Streaming URL at ${ipPort}. 
-                        If you plan to stream from a different device, this may be expected behavior. 
-                        Otherwise, please try again or select another URL. 
-                        If your server is behind a firewall, consider using Plex Relay.`,
+          title: '¡Error en la Prueba de URL de Streaming!',
+          description: `Tu dispositivo no pudo acceder a la URL de Streaming en ${ipPort}. 
+                        Si planeas reproducir desde otro dispositivo o red, esto podría ser normal. 
+                        De lo contrario, inténtalo de nuevo o selecciona otra URL. 
+                        Si tu servidor está detrás de un firewall o CGNAT, considera usar Plex Relay.`,
           variant: 'destructive',
           duration: 30 * 1000,
         });
@@ -66,7 +66,7 @@ export const StreamingUrlField: FC<Props> = ({ form, server }) => {
       name="streamingUrl"
       render={({ field }) => (
         <FormItem className="rounded-lg border p-2">
-          <FormLabel className="text-base">Streaming URL</FormLabel>
+          <FormLabel className="text-base">URL de Streaming</FormLabel>
           <div className="flex">
             <Select
               onValueChange={field.onChange}
@@ -75,7 +75,7 @@ export const StreamingUrlField: FC<Props> = ({ form, server }) => {
             >
               <FormControl>
                 <SelectTrigger>
-                  <SelectValue placeholder="Select a streaming url" />
+                  <SelectValue placeholder="Selecciona una URL de streaming" />
                 </SelectTrigger>
               </FormControl>
               {server.connections.length > 0 && (
@@ -89,7 +89,7 @@ export const StreamingUrlField: FC<Props> = ({ form, server }) => {
                       )}
                       {conn.relay && (
                         <Badge className="mr-1.5" variant="secondary">
-                          relay
+                          retransmisión
                         </Badge>
                       )}
                       {`${conn.address}:${conn.port}`}
@@ -107,13 +107,12 @@ export const StreamingUrlField: FC<Props> = ({ form, server }) => {
               {testInProgress ? (
                 <div className="w-5 h-5 rounded-full animate-spin border-t-2" />
               ) : (
-                'Test'
+                'Probar'
               )}
             </Button>
           </div>
           <FormDescription>
-            Select the URL of your Plex server for streaming content to Stremio
-            clients.
+            Selecciona la URL de tu servidor Plex para la transmisión y reproducción de contenido en Stremio.
           </FormDescription>
           <FormMessage />
         </FormItem>

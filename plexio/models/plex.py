@@ -201,7 +201,7 @@ class PlexMediaMeta(BaseModel):
             if subtitles_languages:
                 languages += f' ({"/".join(sorted(subtitles_languages))})'
 
-            quality_description = f'Direct Play {media.get("videoResolution", "")}'
+            quality_description = f'Direct Play (Directo) {media.get("videoResolution", "")}'
             streams.append(
                 StremioStream(
                     name=name,
@@ -238,7 +238,7 @@ class PlexMediaMeta(BaseModel):
             )
             if configuration.include_transcode_original:
                 quality_description = (
-                    f'Transcode {media.get("videoResolution", "")} (original)'
+                    f'Transcodificación {media.get("videoResolution", "")} (original)'
                 )
                 streams.append(
                     StremioStream(
@@ -259,7 +259,7 @@ class PlexMediaMeta(BaseModel):
                     quality_params = RESOLUTION_QUALITY_PARAMS[quality]
                     if media['width'] <= quality_params['min_width']:
                         continue
-                    quality_description = f'Transcode {quality_params["name"]}'
+                    quality_description = f'Transcodificación {quality_params["name"]}'
                     streams.append(
                         StremioStream(
                             name=name,
@@ -278,7 +278,7 @@ class PlexMediaMeta(BaseModel):
                 streams.append(
                     StremioStream(
                         name=name,
-                        description='Open on plex.tv (external)',
+                        description='Abrir en plex.tv (externo)',
                         externalUrl=f'https://app.plex.tv/#!/provider/tv.plex.provider.metadata/details?key=/library/metadata/{self.guid.split("/")[-1]}',
                     ),
                 )

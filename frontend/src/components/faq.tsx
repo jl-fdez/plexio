@@ -8,50 +8,49 @@ import {
 const QUESTIONS = [
   {
     id: 'what-is-plexio',
-    question: `What is Plexio?`,
-    answer: `Plexio is an addon that connects Plex with Stremio, enabling you to stream your Plex content directly 
-             within the Stremio interface. It allows you to integrate Plex's media library, manage metadata, and enjoy
-             seamless streaming across devices.`,
+    question: `¿Qué es Plexio?`,
+    answer: `Plexio es un addon que conecta Plex con Stremio, permitiéndote reproducir tu contenido de Plex directamente 
+             dentro de la interfaz de Stremio. Te permite integrar tu biblioteca multimedia de Plex, gestionar metadatos 
+             y disfrutar de una experiencia de reproducción fluida en todos tus dispositivos.`,
   },
   {
     id: 'is-plexio-secure',
-    question: `Is Plexio secure?`,
-    answer: `Yes, Plexio is secure. The code is available on GitHub, allowing you to review and verify its security.
-             It uses OAuth for safe login without requiring you to share your Plex password. Additionally, if needed, 
-             you can terminate access through the "Authorized Devices" tab in your Plex account settings.`,
+    question: `¿Es seguro Plexio?`,
+    answer: `Sí, Plexio es seguro. El código fuente es abierto y está disponible en GitHub, permitiéndote revisar y verificar su seguridad.
+             Utiliza el protocolo OAuth oficial para un inicio de sesión seguro sin necesidad de compartir tu contraseña de Plex. Además, 
+             puedes revocar el acceso en cualquier momento desde la pestaña "Dispositivos autorizados" en los ajustes de tu cuenta de Plex.`,
   },
   {
     id: 'how-plexio-work',
-    question: `How does Plexio work?`,
-    answer: `Plexio uses the Plex API to match Stremio IMDB data to the corresponding Plex media ID and provide metadata
-             for your content. The addon itself is not involved in streaming; it only supplies metadata. Streaming works
-             directly between the Stremio client and your Plex Media Server.`,
+    question: `¿Cómo funciona Plexio?`,
+    answer: `Plexio utiliza la API de Plex para asociar los datos de IMDb de Stremio con el ID multimedia correspondiente en Plex y proporcionar los metadatos
+             de tu contenido. El addon en sí no transmite el vídeo a través de sus servidores; solo proporciona los enlaces y metadatos. La transmisión ocurre
+             directamente entre tu aplicación de Stremio y tu propio Plex Media Server.`,
   },
   {
     id: 'where-find-support',
-    question: `Where can I find support?`,
-    answer: `You can find support on our Discord channel, through GitHub issues, or by email. Links to all support 
-             channels are located in the top-left corner of the page.`,
+    question: `¿Dónde puedo obtener soporte?`,
+    answer: `Puedes encontrar soporte en nuestro canal de Discord, a través de las "Issues" de GitHub o por correo electrónico. Los enlaces a todos 
+             los canales de soporte se encuentran en la esquina superior izquierda de la página.`,
   },
   {
     id: 'can-self-host',
-    question: `Can I self-host?`,
-    answer: `Yes, you can self-host Plexio. Instructions are available in the source code repository's README file.`,
+    question: `¿Puedo auto-alojarlo (self-host)?`,
+    answer: `Sí, puedes auto-alojar Plexio fácilmente con Docker. Las instrucciones detalladas están disponibles en el archivo README del repositorio.`,
   },
   {
     id: 'what-is-transcoded',
-    question: `What is a transcoded stream?`,
-    answer: `A transcoded stream is a version of your media that’s converted to a different format or resolution to suit
-             your device or network. Direct play is usually better, as it streams the original file without 
-             modification. Use transcoding if the original file isn’t compatible with your device or if your network 
-             needs a lower bitrate for smoother playback.`,
+    question: `¿Qué es una transmisión transcodificada (transcode)?`,
+    answer: `Una transmisión transcodificada es una versión de tu archivo multimedia que el servidor Plex convierte en tiempo real a un formato o resolución 
+             diferente para adaptarse a tu dispositivo o ancho de banda. La reproducción directa (Direct Play) suele ser mejor, ya que reproduce el archivo 
+             original sin pérdida de calidad. Usa la transcodificación si tu dispositivo no soporta el formato original o si tu conexión requiere una tasa de bits menor.`,
   },
 ];
 
 const FAQ = () => {
   return (
     <div className="mt-5 mb-5 border rounded-lg p-6">
-      <h2 className="text-md font-semibold">Frequently Asked Questions</h2>
+      <h2 className="text-md font-semibold">Preguntas Frecuentes</h2>
       <Accordion type="multiple" className="mt-4">
         {QUESTIONS.map((item) => (
           <AccordionItem value={item.id} key={item.id}>
