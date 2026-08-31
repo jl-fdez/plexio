@@ -1,4 +1,4 @@
-FROM node:18.2.0-alpine as build
+FROM node:18.2.0-alpine AS build
 
 WORKDIR /app
 
@@ -15,7 +15,7 @@ FROM unit:1.32.1-python3.11
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends mime-types mailcap && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends mime-support && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml pyproject.toml
 COPY plexio plexio
