@@ -152,6 +152,7 @@ async def get_customer_manifest(
                 catalogs=[],
                 idPrefixes=['tt', 'plexio'],
                 behaviorHints={'configurable': False, 'configurationRequired': False},
+                contactEmail='support@plexio.stream',
             )
 
         # Validar límite de dispositivos
@@ -168,6 +169,7 @@ async def get_customer_manifest(
                     catalogs=[],
                     idPrefixes=['tt', 'plexio'],
                     behaviorHints={'configurable': False, 'configurationRequired': False},
+                    contactEmail='support@plexio.stream',
                 )
         except Exception as dev_err:
             logger.exception('Error validando dispositivo: %s', dev_err)
@@ -183,6 +185,7 @@ async def get_customer_manifest(
                 catalogs=[],
                 idPrefixes=['tt', 'plexio'],
                 behaviorHints={'configurable': False, 'configurationRequired': False},
+                contactEmail='support@plexio.stream',
             )
 
         config = build_addon_configuration(plex_config)
@@ -222,6 +225,7 @@ async def get_customer_manifest(
             catalogs=catalogs,
             idPrefixes=['tt', 'plexio'],
             behaviorHints={'configurable': False, 'configurationRequired': False},
+            contactEmail='support@plexio.stream',
         )
     except HTTPException:
         raise
@@ -237,6 +241,7 @@ async def get_customer_manifest(
             catalogs=[],
             idPrefixes=['tt', 'plexio'],
             behaviorHints={'configurable': False, 'configurationRequired': False},
+            contactEmail='support@plexio.stream',
         )
 
 
