@@ -49,6 +49,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+import logging
+import traceback
+from fastapi.responses import JSONResponse
+from fastapi import Request
+
+logger = logging.getLogger('plexio')
+
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=settings.cors_origin_regex,
@@ -56,6 +63,20 @@ app.add_middleware(
     allow_methods=['*'],
     allow_headers=['*'],
 )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error('Unhandled exception on %s: %s\n%s', request.url, exc, traceback.format_exc())
+    return JSONResponse(
+        status_code=500,
+        content={
+            'detail': 'Error interno del servidor',
+            'error_type': type(exc).__name__,
+            'error_message': str(exc),
+            'path': str(request.url.path),
+        },
+    )
 
 # Routers de administración
 app.include_router(admin_auth_router)
