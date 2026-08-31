@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   LogOut,
   Server,
+  ShieldCheck,
   Users,
 } from 'lucide-react';
 import { Link, Navigate, Outlet, useLocation } from 'react-router-dom';
@@ -49,6 +50,11 @@ export const AdminLayout: FC = () => {
       label: 'Historial de Pagos',
       path: '/admin/payments',
       icon: CreditCard,
+    },
+    {
+      label: 'Administradores',
+      path: '/admin/users',
+      icon: ShieldCheck,
     },
   ];
 

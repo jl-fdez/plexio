@@ -10,6 +10,7 @@ import { AdminLayout } from '@/pages/admin/AdminLayout';
 import { AdminLoginPage } from '@/pages/admin/AdminLoginPage';
 import { AdminPaymentsPage } from '@/pages/admin/AdminPaymentsPage';
 import { AdminPlexSettingsPage } from '@/pages/admin/AdminPlexSettingsPage';
+import { AdminUsersPage } from '@/pages/admin/AdminUsersPage';
 
 function App() {
   const [token, setToken] = usePlexToken();
@@ -27,6 +28,7 @@ function App() {
             <Route path="customers" element={<AdminCustomersPage />} />
             <Route path="plex-settings" element={<AdminPlexSettingsPage />} />
             <Route path="payments" element={<AdminPaymentsPage />} />
+            <Route path="users" element={<AdminUsersPage />} />
           </Route>
 
           {/* Redirección raíz al portal admin */}

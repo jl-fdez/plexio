@@ -6,6 +6,19 @@ export interface AdminUser {
   id: number;
   username: string;
   email: string | null;
+  created_at?: string | null;
+}
+
+export interface CreateAdminPayload {
+  username: string;
+  password: string;
+  email?: string;
+}
+
+export interface UpdateAdminPayload {
+  username?: string;
+  password?: string;
+  email?: string;
 }
 
 export interface LoginResponse {
@@ -74,3 +87,35 @@ export const getAdminMe = async (): Promise<AdminUser | null> => {
 export const logoutAdmin = () => {
   localStorage.removeItem('adminToken');
 };
+
+export const getAdminUsers = async (): Promise<AdminUser[]> => {
+  const res = await axios.get(`${API_BASE}/users`, {
+    headers: getAuthHeaders(),
+  });
+  return res.data;
+};
+
+export const createAdminUser = async (payload: CreateAdminPayload): Promise<AdminUser> => {
+  const res = await axios.post(`${API_BASE}/users`, payload, {
+    headers: getAuthHeaders(),
+  });
+  return res.data;
+};
+
+export const updateAdminUser = async (
+  id: number,
+  payload: UpdateAdminPayload,
+): Promise<AdminUser> => {
+  const res = await axios.put(`${API_BASE}/users/${id}`, payload, {
+    headers: getAuthHeaders(),
+  });
+  return res.data;
+};
+
+export const deleteAdminUser = async (id: number): Promise<{ message: string }> => {
+  const res = await axios.delete(`${API_BASE}/users/${id}`, {
+    headers: getAuthHeaders(),
+  });
+  return res.data;
+};
+
