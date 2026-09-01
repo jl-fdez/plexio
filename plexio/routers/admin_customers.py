@@ -74,6 +74,12 @@ def parse_expiration_date(exp) -> datetime:
 def compute_customer_status(customer: Customer) -> str:
     if customer.status != 'ACTIVE':
         return 'SUSPENDED'
+    exp = parse_expiration_date(customer.expiration_date)
+    now = datetime.utcnow()
+    if exp < now:
+        return 'EXPIRED'
+    if exp <= now + timedelta(days=3):
+        return 'EXPIRING_SOON'
     return 'ACTIVE'
 
 
@@ -84,18 +90,37 @@ async def get_dashboard_stats(
 ):
     now = datetime.utcnow()
     month_start = datetime(now.year, now.month, 1)
+    three_days_later = now + timedelta(days=3)
 
     # Clientes totales
     stmt_total = select(func.count(Customer.id))
     total_customers = (await db.execute(stmt_total)).scalar_one()
 
-    # Clientes activos (status == ACTIVE)
-    stmt_active = select(func.count(Customer.id)).where(Customer.status == 'ACTIVE')
-    active_customers = (await db.execute(stmt_active)).scalar_one()
-
-    # Clientes suspendidos / inactivos
+    # Clientes suspendidos / inactivos manualmente
     stmt_suspended = select(func.count(Customer.id)).where(Customer.status != 'ACTIVE')
     suspended_customers = (await db.execute(stmt_suspended)).scalar_one()
+
+    # Clientes expirados (status ACTIVE pero fecha anterior a hoy)
+    stmt_expired = select(func.count(Customer.id)).where(
+        Customer.status == 'ACTIVE',
+        Customer.expiration_date < now,
+    )
+    expired_customers = (await db.execute(stmt_expired)).scalar_one()
+
+    # Clientes por vencer (en los próximos 3 días)
+    stmt_expiring_soon = select(func.count(Customer.id)).where(
+        Customer.status == 'ACTIVE',
+        Customer.expiration_date >= now,
+        Customer.expiration_date <= three_days_later,
+    )
+    expiring_soon_customers = (await db.execute(stmt_expiring_soon)).scalar_one()
+
+    # Clientes activos reales (status ACTIVE y no vencidos)
+    stmt_active = select(func.count(Customer.id)).where(
+        Customer.status == 'ACTIVE',
+        Customer.expiration_date >= now,
+    )
+    active_customers = (await db.execute(stmt_active)).scalar_one()
 
     # Ingresos del mes
     stmt_income = select(func.coalesce(func.sum(PaymentRecord.amount), 0.0)).where(
@@ -110,8 +135,8 @@ async def get_dashboard_stats(
     return {
         'total_customers': total_customers,
         'active_customers': active_customers,
-        'expiring_soon_customers': 0,
-        'expired_customers': 0,
+        'expiring_soon_customers': expiring_soon_customers,
+        'expired_customers': expired_customers,
         'suspended_customers': suspended_customers,
         'monthly_income': round(float(monthly_income), 2),
         'total_income': round(float(total_income), 2),

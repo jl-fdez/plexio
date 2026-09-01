@@ -8,7 +8,10 @@ from plexio.db.models import Customer, CustomerDevice
 
 
 def get_client_ip(request: Request) -> str:
-    # Priorizar cabeceras de proxy inverso como X-Forwarded-For o X-Real-IP
+    # Priorizar cabeceras de proxy inverso
+    cf_ip = request.headers.get('cf-connecting-ip')
+    if cf_ip:
+        return cf_ip.strip()
     forwarded = request.headers.get('x-forwarded-for')
     if forwarded:
         return forwarded.split(',')[0].strip()
@@ -50,9 +53,11 @@ def parse_device_name(user_agent: str, ip: str) -> str:
     return f'Dispositivo ({ip[:12]})'
 
 
-def generate_fingerprint(ip: str, user_agent: str) -> str:
-    # Combinar IP y User-Agent para una huella digital determinista
-    raw = f'{ip}_{user_agent}'.encode('utf-8')
+def generate_fingerprint(customer_id: int, user_agent: str) -> str:
+    # Huella digital basada en cliente y User-Agent normalizado
+    # Permite cambios de IP dinámica o Wi-Fi sin expulsar el dispositivo legítimo
+    clean_ua = (user_agent or 'Unknown').strip().lower()
+    raw = f'{customer_id}_{clean_ua}'.encode('utf-8')
     return hashlib.sha256(raw).hexdigest()[:32]
 
 
@@ -67,7 +72,7 @@ async def check_and_register_device(
     """
     ip = get_client_ip(request)
     ua = request.headers.get('user-agent', 'Desconocido')
-    fingerprint = generate_fingerprint(ip, ua)
+    fingerprint = generate_fingerprint(customer.id, ua)
 
     # 1. Buscar si este dispositivo ya está registrado para este cliente
     stmt = select(CustomerDevice).where(

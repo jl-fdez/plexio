@@ -62,7 +62,14 @@ export const AdminPlexSettingsPage: FC = () => {
         setSelectedServerName(res.config.server_name);
         setDiscoveryUrl(res.config.discovery_url);
         setStreamingUrl(res.config.streaming_url);
-        setSelectedSections(res.config.sections);
+        const mappedSections = Array.isArray(res.config.sections)
+          ? res.config.sections.map((s: any) => ({
+              key: String(s.key),
+              title: String(s.title),
+              type: String(s.type),
+            }))
+          : [];
+        setSelectedSections(mappedSections);
         setTranscodeOriginal(res.config.transcode_original);
         setTranscodeDown(res.config.transcode_down);
         setTranscodeQualities(res.config.transcode_qualities || ['1080p', '720p']);
@@ -497,7 +504,7 @@ export const AdminPlexSettingsPage: FC = () => {
                   {availableSections.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {availableSections.map((sec: any) => {
-                        const isChecked = selectedSections.some((s) => s.key === sec.key);
+                        const isChecked = selectedSections.some((s) => String(s.key) === String(sec.key));
                         return (
                           <label
                             key={sec.key}
@@ -513,12 +520,12 @@ export const AdminPlexSettingsPage: FC = () => {
                               onChange={(e) => {
                                 if (e.target.checked) {
                                   setSelectedSections([
-                                    ...selectedSections,
-                                    { key: sec.key, title: sec.title, type: sec.type },
+                                    ...selectedSections.filter((s) => String(s.key) !== String(sec.key)),
+                                    { key: String(sec.key), title: String(sec.title), type: String(sec.type) },
                                   ]);
                                 } else {
                                   setSelectedSections(
-                                    selectedSections.filter((s) => s.key !== sec.key),
+                                    selectedSections.filter((s) => String(s.key) !== String(sec.key)),
                                   );
                                 }
                               }}

@@ -121,19 +121,19 @@ class PlexMediaMeta(BaseModel):
             description=self.summary,
             poster=str(
                 configuration.streaming_url
-                / self.thumb[1:]
+                / self.thumb.lstrip('/')
                 % {'X-Plex-Token': configuration.access_token},
             )
             if self.thumb
             else None,
             background=str(
                 configuration.streaming_url
-                / (self.art or self.thumb)[1:]
+                / (self.art or self.thumb).lstrip('/')
                 % {'X-Plex-Token': configuration.access_token},
             )
             if (self.art or self.thumb)
             else None,
-            genres=[g['tag'] for g in self.genre],
+            genres=[g['tag'] for g in self.genre if isinstance(g, dict) and 'tag' in g],
         )
 
     def to_stremio_meta_review(self, configuration):
@@ -141,9 +141,9 @@ class PlexMediaMeta(BaseModel):
         from plexio.models.stremio import StremioMetaPreview
 
         stremio_id = None
-        guids = self.guids
+        guids = self.guids or []
         for guid in guids:
-            if guid['id'].startswith('imdb://'):
+            if isinstance(guid, dict) and guid.get('id', '').startswith('imdb://'):
                 stremio_id = guid['id'][7:]
 
         if not stremio_id:
@@ -155,18 +155,18 @@ class PlexMediaMeta(BaseModel):
         return StremioMetaPreview(
             id=stremio_id,
             name=self.title,
-            releaseInfo=str(self.year),
+            releaseInfo=str(self.year or self.get_year()),
             poster=str(
                 configuration.streaming_url
-                / self.thumb[1:]
+                / self.thumb.lstrip('/')
                 % {'X-Plex-Token': configuration.access_token},
             )
             if self.thumb
             else None,
-            type=PLEX_TO_STREMIO_MEDIA_TYPE[self.type],
+            type=PLEX_TO_STREMIO_MEDIA_TYPE.get(self.type, 'movie'),
             imdbRating=self.audience_rating,
             description=self.summary,
-            genres=[g['tag'] for g in self.genre],
+            genres=[g['tag'] for g in self.genre if isinstance(g, dict) and 'tag' in g],
         )
 
     def get_stremio_streams(self, configuration):
@@ -174,29 +174,43 @@ class PlexMediaMeta(BaseModel):
 
         streams = []
         for i, media in enumerate(self.media):
-            name = f'{configuration.server_name} {self.library_section_title}'
-            filename = os.path.basename(media['Part'][0]['file'])
+            if not isinstance(media, dict):
+                continue
+            parts = media.get('Part', [])
+            if not parts or not isinstance(parts[0], dict):
+                continue
+            first_part = parts[0]
+            part_key = first_part.get('key', '').lstrip('/')
+            if not part_key:
+                continue
+
+            file_path = first_part.get('file', '')
+            filename = os.path.basename(file_path) if file_path else self.title
+            name = f'{configuration.server_name} {self.library_section_title or ""}'.strip()
 
             audio_languages = set()
             subtitles_languages = set()
             external_subtitles = []
-            for part_stream in media['Part'][0].get('Stream', []):
-                if part_stream['streamType'] == 2:
+            for part_stream in first_part.get('Stream', []):
+                if not isinstance(part_stream, dict):
+                    continue
+                if part_stream.get('streamType') == 2:
                     audio_languages.add(
                         get_flag_emoji(part_stream.get('languageTag', 'Unknown')),
                     )
-                elif part_stream['streamType'] == 3:
+                elif part_stream.get('streamType') == 3:
                     subtitles_languages.add(
                         get_flag_emoji(part_stream.get('languageTag', 'Unknown')),
                     )
-                    if 'key' in part_stream:
+                    if 'key' in part_stream and part_stream['key']:
+                        sub_key = part_stream['key'].lstrip('/')
                         external_subtitles.append(
                             {
-                                'id': str(part_stream['id']),
-                                'lang': part_stream['displayTitle'],
+                                'id': str(part_stream.get('id', '')),
+                                'lang': part_stream.get('displayTitle', 'Subtítulo'),
                                 'url': str(
                                     configuration.streaming_url
-                                    / part_stream['key'][1:]
+                                    / sub_key
                                     % {
                                         'X-Plex-Token': configuration.access_token,
                                     }
@@ -220,7 +234,7 @@ class PlexMediaMeta(BaseModel):
                     ),
                     url=str(
                         configuration.streaming_url
-                        / media['Part'][0]['key'][1:]
+                        / part_key
                         % {
                             'X-Plex-Token': configuration.access_token,
                         },
@@ -230,44 +244,26 @@ class PlexMediaMeta(BaseModel):
                 ),
             )
 
-            transcode_url = (
-                configuration.streaming_url
-                / 'video/:/transcode/universal/start.m3u8'
-                % {
-                    'path': self.key,
-                    'mediaIndex': i,
-                    'protocol': 'hls',
-                    'fastSeek': 1,
-                    'copyts': 1,
-                    'autoAdjustQuality': 0,
-                    'X-Plex-Platform': 'Chrome',
-                    'X-Plex-Token': configuration.access_token,
-                }
-            )
-            if configuration.include_transcode_original:
-                quality_description = (
-                    f'Transcodificación {media.get("videoResolution", "")} (original)'
+            if self.key:
+                self_key = self.key.lstrip('/')
+                transcode_url = (
+                    configuration.streaming_url
+                    / 'video/:/transcode/universal/start.m3u8'
+                    % {
+                        'path': f'/{self_key}',
+                        'mediaIndex': i,
+                        'protocol': 'hls',
+                        'fastSeek': 1,
+                        'copyts': 1,
+                        'autoAdjustQuality': 0,
+                        'X-Plex-Platform': 'Chrome',
+                        'X-Plex-Token': configuration.access_token,
+                    }
                 )
-                streams.append(
-                    StremioStream(
-                        name=name,
-                        description=description_template.format(
-                            filename=filename,
-                            quality=quality_description,
-                            languages=languages,
-                        ),
-                        url=str(transcode_url % {'videoQuality': 100}),
-                        subtitles=external_subtitles,
-                        behaviorHints={'bingeGroup': quality_description},
-                    ),
-                )
-
-            if configuration.include_transcode_down:
-                for quality in configuration.transcode_down_qualities:
-                    quality_params = RESOLUTION_QUALITY_PARAMS[quality]
-                    if media['width'] <= quality_params['min_width']:
-                        continue
-                    quality_description = f'Transcodificación {quality_params["name"]}'
+                if configuration.include_transcode_original:
+                    quality_description = (
+                        f'Transcodificación {media.get("videoResolution", "")} (original)'
+                    )
                     streams.append(
                         StremioStream(
                             name=name,
@@ -276,11 +272,33 @@ class PlexMediaMeta(BaseModel):
                                 quality=quality_description,
                                 languages=languages,
                             ),
-                            url=str(transcode_url % quality_params['plex_args']),
+                            url=str(transcode_url % {'videoQuality': 100}),
                             subtitles=external_subtitles,
                             behaviorHints={'bingeGroup': quality_description},
                         ),
                     )
+
+                if configuration.include_transcode_down:
+                    for quality in configuration.transcode_down_qualities:
+                        if quality not in RESOLUTION_QUALITY_PARAMS:
+                            continue
+                        quality_params = RESOLUTION_QUALITY_PARAMS[quality]
+                        if media.get('width', 0) <= quality_params['min_width']:
+                            continue
+                        quality_description = f'Transcodificación {quality_params["name"]}'
+                        streams.append(
+                            StremioStream(
+                                name=name,
+                                description=description_template.format(
+                                    filename=filename,
+                                    quality=quality_description,
+                                    languages=languages,
+                                ),
+                                url=str(transcode_url % quality_params['plex_args']),
+                                subtitles=external_subtitles,
+                                behaviorHints={'bingeGroup': quality_description},
+                            ),
+                        )
 
             if configuration.include_plex_tv and self.guid.startswith('plex:'):
                 streams.append(
@@ -343,7 +361,7 @@ class PlexEpisodeMeta(BaseModel):
             released=released,
             thumbnail=str(
                 configuration.streaming_url
-                / self.thumb[1:]
+                / self.thumb.lstrip('/')
                 % {'X-Plex-Token': configuration.access_token},
             )
             if self.thumb

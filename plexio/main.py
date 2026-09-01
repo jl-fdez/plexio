@@ -65,8 +65,17 @@ app.add_middleware(
 )
 
 
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    if isinstance(exc, (HTTPException, StarletteHTTPException)):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={'detail': exc.detail},
+            headers=getattr(exc, 'headers', None),
+        )
     logger.error('Unhandled exception on %s: %s\n%s', request.url, exc, traceback.format_exc())
     return JSONResponse(
         status_code=500,

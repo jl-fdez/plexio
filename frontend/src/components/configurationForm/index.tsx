@@ -46,17 +46,22 @@ const ConfigurationForm: FC<Props> = ({ servers }) => {
   async function onSubmit(configuration: any, event: any) {
     configuration.version = __APP_VERSION__;
     configuration.accessToken = server?.accessToken;
-    configuration.sections = configuration.sections.filter((item: any) =>
-      sections.find((s) => s.key === item.key),
-    );
+    if (Array.isArray(configuration.sections) && configuration.sections.length > 0) {
+      configuration.sections = configuration.sections.map((item: any) => ({
+        key: String(item.key),
+        title: item.title,
+        type: item.type,
+      }));
+    }
 
     const encodedConfiguration = base64_encode(JSON.stringify(configuration));
     const addonUrl = `http://${window.location.host}/${uuidv4()}/${encodedConfiguration}/manifest.json`;
 
-    if (event.nativeEvent.submitter.name === 'clipboard') {
+    if (event?.nativeEvent?.submitter?.name === 'clipboard') {
       await copyTextToClipboard(addonUrl);
     } else {
-      await copyTextToClipboard(addonUrl);
+      const stremioProtocolUrl = `stremio://${window.location.host}/${uuidv4()}/${encodedConfiguration}/manifest.json`;
+      window.location.href = stremioProtocolUrl;
     }
   }
 

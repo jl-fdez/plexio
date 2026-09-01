@@ -84,13 +84,13 @@ async def get_section_media(
     if search:
         params['title'] = search
     if sort:
-        params['sort'] = SORT_OPTIONS[sort]
+        params['sort'] = SORT_OPTIONS.get(sort, sort)
     json = await get_json(
         client=client,
         url=url / 'library/sections' / section_id / 'all',
         params=params,
     )
-    metadata = json['MediaContainer'].get('Metadata', [])
+    metadata = json.get('MediaContainer', {}).get('Metadata', []) if isinstance(json, dict) else []
     return [PlexMediaMeta(**meta) for meta in metadata]
 
 
@@ -110,20 +110,23 @@ async def get_media(
             'X-Plex-Token': token,
         },
     )
-    media_sections = json['MediaContainer'].get('Metadata', [])
+    media_sections = json.get('MediaContainer', {}).get('Metadata', []) if isinstance(json, dict) else []
     media_metas = []
     for section in media_sections:
-        if section['type'] not in ('show', 'movie', 'episode'):
+        if section.get('type') not in ('show', 'movie', 'episode') or not section.get('ratingKey'):
             continue
         json = await get_json(
             client=client,
-            url=url / 'library/metadata' / section['ratingKey'],
+            url=url / 'library/metadata' / str(section['ratingKey']),
             params={
                 'X-Plex-Token': token,
                 'includeElements': 'Stream',
             },
         )
-        metadata = json['MediaContainer']['Metadata'][0]
+        meta_list = json.get('MediaContainer', {}).get('Metadata', []) if isinstance(json, dict) else []
+        if not meta_list:
+            continue
+        metadata = meta_list[0]
         media_metas.append(PlexMediaMeta(**metadata))
         if get_only_first:
             break
@@ -137,14 +140,15 @@ async def get_all_episodes(
     token: str,
     key: str,
 ) -> list[PlexEpisodeMeta]:
+    leaf_key = key.lstrip('/')
     json = await get_json(
         client=client,
-        url=str(url / key[1:]).replace('/children', '/allLeaves'),
+        url=str(url / leaf_key).replace('/children', '/allLeaves'),
         params={
             'X-Plex-Token': token,
         },
     )
-    metadata = json['MediaContainer'].get('Metadata', [])
+    metadata = json.get('MediaContainer', {}).get('Metadata', []) if isinstance(json, dict) else []
     episodes = []
     for i, meta in enumerate(metadata):
         meta.setdefault('index', i)
@@ -158,7 +162,7 @@ async def imdb_to_plex_id(
     imdb_id: str,
     media_type: PlexMediaType,
     token: str,
-) -> str:
+) -> str | None:
     json = await get_json(
         client=client,
         url='https://metadata.provider.plex.tv/library/metadata/matches',
@@ -169,9 +173,12 @@ async def imdb_to_plex_id(
             'guid': f'com.plexapp.agents.imdb://{imdb_id}?lang=en',
         },
     )
-    media_container = json['MediaContainer']
-    if media_container['totalSize']:
-        return media_container['Metadata'][0]['guid']
+    if isinstance(json, dict):
+        media_container = json.get('MediaContainer', {})
+        metadata = media_container.get('Metadata', [])
+        if metadata and len(metadata) > 0:
+            return metadata[0].get('guid')
+    return None
 
 
 async def get_episode_guid(

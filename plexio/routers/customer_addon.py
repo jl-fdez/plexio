@@ -19,7 +19,7 @@ from plexio.db.models import Customer, PlexServerConfig
 from plexio.dependencies import get_cache, get_http_client
 from plexio.models import PLEX_TO_STREMIO_MEDIA_TYPE, STREMIO_TO_PLEX_MEDIA_TYPE
 from plexio.models.addon import AddonConfiguration
-from plexio.models.plex import PlexLibrarySection, Resolution
+from plexio.models.plex import PlexLibrarySection, PlexMediaType, Resolution
 from plexio.models.stremio import (
     StremioCatalog,
     StremioCatalogManifest,
@@ -68,7 +68,9 @@ async def get_valid_customer_and_config(
             detail='Cliente o token no encontrado',
         )
 
-    is_valid = (customer.status == 'ACTIVE')
+    exp_date = parse_expiration_date(customer.expiration_date)
+    is_expired = (exp_date < datetime.utcnow())
+    is_valid = (customer.status == 'ACTIVE') and not is_expired
 
     stmt_cfg = select(PlexServerConfig).order_by(PlexServerConfig.id.desc())
     res_cfg = await db.execute(stmt_cfg)
@@ -194,11 +196,14 @@ async def get_customer_manifest(
         exp_date_str = exp_date.strftime('%Y-%m-%d')
 
         if not is_valid:
+            is_expired = (exp_date < datetime.utcnow())
+            status_msg = f'La suscripción de {customer.name} venció el {exp_date_str}. Contacta al administrador para renovar.' if is_expired else f'El acceso para {customer.name} se encuentra pausado o suspendido. Contacta al administrador para habilitar tu servicio.'
+            status_title = f'PX Central (Vencido - {customer.name})' if is_expired else f'PX Central (Acceso Suspendido - {customer.name})'
             return StremioManifest(
                 id='com.stremio.plexio.customer',
                 version=__version__,
-                description=f'El acceso para {customer.name} se encuentra pausado o suspendido. Contacta al administrador para habilitar tu servicio.',
-                name=f'PX Central (Acceso Suspendido - {customer.name})',
+                description=status_msg,
+                name=status_title,
                 resources=['stream'],
                 types=[StremioMediaType.movie, StremioMediaType.series],
                 catalogs=[],
