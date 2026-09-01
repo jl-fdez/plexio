@@ -70,7 +70,7 @@ async def get_valid_customer_and_config(
 
     is_valid = (customer.status == 'ACTIVE')
 
-    stmt_cfg = select(PlexServerConfig).order_by(PlexServerConfig.id.asc())
+    stmt_cfg = select(PlexServerConfig).order_by(PlexServerConfig.id.desc())
     res_cfg = await db.execute(stmt_cfg)
     plex_config = res_cfg.scalars().first()
 
@@ -199,9 +199,12 @@ async def get_customer_manifest(
         config = build_addon_configuration(plex_config)
         catalogs = []
         for section in config.sections:
-            media_type = PLEX_TO_STREMIO_MEDIA_TYPE.get(section.type) or (
-                StremioMediaType.movie if 'movie' in str(section.type).lower() else StremioMediaType.series
-            )
+            sec_type_str = str(section.type).lower()
+            if 'show' in sec_type_str or 'series' in sec_type_str:
+                media_type = StremioMediaType.series
+            else:
+                media_type = StremioMediaType.movie
+
             catalogs.append(
                 StremioCatalogManifest(
                     id=str(section.key),
