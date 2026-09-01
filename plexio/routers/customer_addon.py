@@ -195,7 +195,10 @@ async def get_customer_manifest(
         exp_date = parse_expiration_date(customer.expiration_date)
         exp_date_str = exp_date.strftime('%Y-%m-%d')
 
-        logo_url = f"{str(request.base_url).rstrip('/')}/logo.png"
+        # Resolver URL pública del logo respetando proxies inversos
+        host = request.headers.get('x-forwarded-host') or request.headers.get('host') or request.url.netloc
+        proto = request.headers.get('x-forwarded-proto') or request.url.scheme
+        logo_url = f"{proto}://{host}/logo.png" if host else f"{str(request.base_url).rstrip('/')}/logo.png"
 
         if not is_valid:
             is_expired = (exp_date < datetime.utcnow())
@@ -279,7 +282,7 @@ async def get_customer_manifest(
             id='com.stremio.plexio.customer',
             version=__version__,
             description=f'PX Central - Suscripción activa de {customer.name} (Max {customer.max_devices} Disp.)',
-            name=f'PX Central ({config.server_name})',
+            name='PX Central',
             logo=logo_url,
             icon=logo_url,
             resources=[

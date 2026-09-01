@@ -276,8 +276,7 @@ class PlexMediaMeta(BaseModel):
             line2 = f'📦 {size_formatted} ' if size_formatted else ''
 
             # Construir Línea 3
-            service_name = configuration.server_name or 'Plex'
-            line3 = f'❤️ {service_name} • PX Central'
+            line3 = '❤️ PX Central'
 
             desc_lines = [line1]
             if line2:
@@ -319,7 +318,7 @@ class PlexMediaMeta(BaseModel):
                     }
                 )
                 if configuration.include_transcode_original:
-                    line3_trans_orig = f'❤️ {service_name} (Transcode Original) • PX Central'
+                    line3_trans_orig = '❤️ Transcode Original • PX Central'
                     desc_orig_lines = [line1]
                     if line2:
                         desc_orig_lines.append(line2)
@@ -342,7 +341,7 @@ class PlexMediaMeta(BaseModel):
                         if media.get('width', 0) <= quality_params['min_width']:
                             continue
                         trans_name = format_stream_resolution_name(quality_params['name'])
-                        line3_trans_down = f'❤️ {service_name} (Transcode {quality_params["name"]}) • PX Central'
+                        line3_trans_down = f'❤️ Transcode {quality_params["name"]} • PX Central'
                         desc_down_lines = [line1, line3_trans_down]
                         streams.append(
                             StremioStream(

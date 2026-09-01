@@ -98,7 +98,11 @@ STATIC_DIR = os.path.join(os.path.dirname(__file__), 'static')
 async def get_logo_png():
     png_path = os.path.join(STATIC_DIR, 'logo.png')
     if os.path.exists(png_path):
-        return FileResponse(png_path, media_type='image/png')
+        return FileResponse(
+            png_path,
+            media_type='image/png',
+            headers={'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=86400'},
+        )
     raise HTTPException(status_code=404, detail='Logo PNG no encontrado')
 
 
@@ -106,7 +110,11 @@ async def get_logo_png():
 async def get_logo_svg():
     svg_path = os.path.join(STATIC_DIR, 'logo.svg')
     if os.path.exists(svg_path):
-        return FileResponse(svg_path, media_type='image/svg+xml')
+        return FileResponse(
+            svg_path,
+            media_type='image/svg+xml',
+            headers={'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=86400'},
+        )
     raise HTTPException(status_code=404, detail='Logo SVG no encontrado')
 
 

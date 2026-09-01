@@ -69,7 +69,9 @@ async def get_manifest(
         name += f' ({configuration.server_name})'
         description += f' Tu ID de instalación: {installation_id}'
 
-    logo_url = f"{str(request.base_url).rstrip('/')}/logo.png"
+    host = request.headers.get('x-forwarded-host') or request.headers.get('host') or request.url.netloc
+    proto = request.headers.get('x-forwarded-proto') or request.url.scheme
+    logo_url = f"{proto}://{host}/logo.png" if host else f"{str(request.base_url).rstrip('/')}/logo.png"
 
     return StremioManifest(
         id='com.stremio.plexio',
