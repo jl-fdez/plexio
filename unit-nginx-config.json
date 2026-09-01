@@ -8,15 +8,14 @@
   "routes": [
     {
       "match": {
-        "uri": "/api/*"
-      },
-      "action": {
-        "pass": "applications/backend"
-      }
-    },
-    {
-      "match": {
-        "uri": "*json"
+        "uri": [
+          "/api/*",
+          "/u/*",
+          "*json",
+          "/logo.png",
+          "/logo.svg",
+          "/static/*"
+        ]
       },
       "action": {
         "pass": "applications/backend"
