@@ -204,7 +204,7 @@ async def get_customer_manifest(
                 continue
             catalogs.append(
                 StremioCatalogManifest(
-                    id=section.key,
+                    id=str(section.key),
                     type=media_type,
                     name=f'{section.title} | {config.server_name}',
                     extra=[
@@ -218,7 +218,7 @@ async def get_customer_manifest(
         return StremioManifest(
             id='com.stremio.plexio.customer',
             version=__version__,
-            description=f'PX Central - Suscripción activa de {customer.name} (Válido hasta: {exp_date_str} • Max {customer.max_devices} Disp.)',
+            description=f'PX Central - Suscripción activa de {customer.name} (Max {customer.max_devices} Disp.)',
             name=f'PX Central ({config.server_name})',
             resources=[
                 'stream',
@@ -242,8 +242,8 @@ async def get_customer_manifest(
         return StremioManifest(
             id='com.stremio.plexio.customer',
             version=__version__,
-            description='Error temporal al conectar con el servidor multimedia.',
-            name='PX Central (Error Temporal)',
+            description=f'Detalle de error: {type(exc).__name__} - {str(exc)}',
+            name='PX Central (Diagnóstico)',
             resources=['stream'],
             types=[StremioMediaType.movie, StremioMediaType.series],
             catalogs=[],
