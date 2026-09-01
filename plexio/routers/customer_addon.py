@@ -107,17 +107,17 @@ def build_addon_configuration(plex_config: PlexServerConfig | None) -> AddonConf
     sections = []
     for s in sections_raw:
         try:
-            sec_type = s.get('type')
-            if sec_type in ('movie', 'show', PlexMediaType.movie, PlexMediaType.show):
-                sections.append(
-                    PlexLibrarySection(
-                        key=str(s['key']),
-                        title=str(s.get('title', 'Biblioteca')),
-                        type=PlexMediaType(sec_type),
-                    )
+            sec_type_str = str(s.get('type', '')).strip().lower()
+            sec_type = PlexMediaType.movie if sec_type_str == 'movie' else (PlexMediaType.show if sec_type_str == 'show' else sec_type_str)
+            sections.append(
+                PlexLibrarySection(
+                    key=str(s.get('key', '')),
+                    title=str(s.get('title', 'Biblioteca')),
+                    type=sec_type,
                 )
-        except Exception:
-            continue
+            )
+        except Exception as err:
+            logger.error('Error parseando seccion Plex %s: %s', s, err)
 
     try:
         qualities_raw = json.loads(plex_config.transcode_qualities_json or '[]')
@@ -199,9 +199,9 @@ async def get_customer_manifest(
         config = build_addon_configuration(plex_config)
         catalogs = []
         for section in config.sections:
-            media_type = PLEX_TO_STREMIO_MEDIA_TYPE.get(section.type)
-            if not media_type:
-                continue
+            media_type = PLEX_TO_STREMIO_MEDIA_TYPE.get(section.type) or (
+                StremioMediaType.movie if 'movie' in str(section.type).lower() else StremioMediaType.series
+            )
             catalogs.append(
                 StremioCatalogManifest(
                     id=str(section.key),

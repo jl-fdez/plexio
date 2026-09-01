@@ -51,9 +51,14 @@ class PlexMediaType(str, Enum):
 
 
 class PlexLibrarySection(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+        arbitrary_types_allowed=True,
+    )
+
     key: str
     title: str
-    type: PlexMediaType
+    type: PlexMediaType | str
 
 
 class PlexMediaMeta(BaseModel):
