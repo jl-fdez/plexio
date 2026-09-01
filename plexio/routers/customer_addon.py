@@ -78,6 +78,14 @@ async def get_valid_customer_and_config(
 
 
 def build_addon_configuration(plex_config: PlexServerConfig | None) -> AddonConfiguration:
+    def safe_url(url_str: str | None) -> URL:
+        try:
+            if url_str and url_str.strip():
+                return URL(url_str.strip())
+        except Exception:
+            pass
+        return URL('http://localhost:32400')
+
     if not plex_config:
         return AddonConfiguration(
             server_name='Plex Server',
@@ -104,7 +112,7 @@ def build_addon_configuration(plex_config: PlexServerConfig | None) -> AddonConf
                 sections.append(
                     PlexLibrarySection(
                         key=str(s['key']),
-                        title=str(s['title']),
+                        title=str(s.get('title', 'Biblioteca')),
                         type=PlexMediaType(sec_type),
                     )
                 )
@@ -120,8 +128,8 @@ def build_addon_configuration(plex_config: PlexServerConfig | None) -> AddonConf
     return AddonConfiguration(
         server_name=plex_config.server_name or 'Plex Server',
         access_token=plex_config.access_token or '',
-        discovery_url=URL(plex_config.discovery_url or 'http://localhost:32400'),
-        streaming_url=URL(plex_config.streaming_url or 'http://localhost:32400'),
+        discovery_url=safe_url(plex_config.discovery_url),
+        streaming_url=safe_url(plex_config.streaming_url),
         sections=sections,
         include_transcode_original=bool(plex_config.transcode_original),
         include_transcode_down=bool(plex_config.transcode_down),
@@ -262,34 +270,38 @@ async def get_customer_catalog(
     extra: str = '',
     db: AsyncSession = Depends(get_db),
 ) -> StremioCatalog:
-    customer, plex_config, is_valid = await get_valid_customer_and_config(customer_token, db)
-    if not is_valid or not plex_config:
+    try:
+        customer, plex_config, is_valid = await get_valid_customer_and_config(customer_token, db)
+        if not is_valid or not plex_config:
+            return StremioCatalog(metas=[])
+
+        device_allowed, _ = await check_and_register_device(customer, request, db)
+        if not device_allowed:
+            return StremioCatalog(metas=[])
+
+        config = build_addon_configuration(plex_config)
+        extras = {}
+        if extra:
+            for item in extra.split('&'):
+                if '=' in item:
+                    k, v = item.split('=', 1)
+                    extras[k] = v
+
+        media = await get_section_media(
+            client=http,
+            url=config.discovery_url,
+            token=config.access_token,
+            section_id=catalog_id,
+            search=extras.get('search', ''),
+            skip=extras.get('skip', 0),
+            sort=extras.get('sort', 'Title'),
+        )
+        return StremioCatalog(
+            metas=[m.to_stremio_meta_review(config) for m in media],
+        )
+    except Exception as exc:
+        logger.exception('Error en get_customer_catalog: %s', exc)
         return StremioCatalog(metas=[])
-
-    device_allowed, _ = await check_and_register_device(customer, request, db)
-    if not device_allowed:
-        return StremioCatalog(metas=[])
-
-    config = build_addon_configuration(plex_config)
-    extras = {}
-    if extra:
-        for item in extra.split('&'):
-            if '=' in item:
-                k, v = item.split('=', 1)
-                extras[k] = v
-
-    media = await get_section_media(
-        client=http,
-        url=config.discovery_url,
-        token=config.access_token,
-        section_id=catalog_id,
-        search=extras.get('search', ''),
-        skip=extras.get('skip', 0),
-        sort=extras.get('sort', 'Title'),
-    )
-    return StremioCatalog(
-        metas=[m.to_stremio_meta_review(config) for m in media],
-    )
 
 
 @router.get(
@@ -304,42 +316,48 @@ async def get_customer_meta(
     http: Annotated[ClientSession, Depends(get_http_client)],
     db: AsyncSession = Depends(get_db),
 ) -> StremioMetaResponse:
-    customer, plex_config, is_valid = await get_valid_customer_and_config(customer_token, db)
-    if not is_valid or not plex_config:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    try:
+        customer, plex_config, is_valid = await get_valid_customer_and_config(customer_token, db)
+        if not is_valid or not plex_config:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
-    device_allowed, _ = await check_and_register_device(customer, request, db)
-    if not device_allowed:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Límite de dispositivos excedido')
+        device_allowed, _ = await check_and_register_device(customer, request, db)
+        if not device_allowed:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Límite de dispositivos excedido')
 
-    if not plex_id.startswith('plexio:'):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        if not plex_id.startswith('plexio:'):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
-    config = build_addon_configuration(plex_config)
-    guid = plexio_id_to_guid(plex_id)
-    media = await get_media(
-        client=http,
-        url=config.discovery_url,
-        token=config.access_token,
-        guid=guid,
-        get_only_first=True,
-    )
-    if not media:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-
-    media_item = media[0]
-    meta = media_item.to_stremio_meta(config)
-
-    if stremio_type == StremioMediaType.series:
-        episodes = await get_all_episodes(
+        config = build_addon_configuration(plex_config)
+        guid = plexio_id_to_guid(plex_id)
+        media = await get_media(
             client=http,
             url=config.discovery_url,
             token=config.access_token,
-            key=media_item.key,
+            guid=guid,
+            get_only_first=True,
         )
-        meta.videos = [e.to_stremio_video_meta(config) for e in episodes]
+        if not media:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
-    return StremioMetaResponse(meta=meta)
+        media_item = media[0]
+        meta = media_item.to_stremio_meta(config)
+
+        if stremio_type == StremioMediaType.series:
+            episodes = await get_all_episodes(
+                client=http,
+                url=config.discovery_url,
+                token=config.access_token,
+                key=media_item.key,
+            )
+            meta.videos = [e.to_stremio_video_meta(config) for e in episodes]
+
+        return StremioMetaResponse(meta=meta)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception('Error en get_customer_meta: %s', exc)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
 
 @router.get(
@@ -355,43 +373,47 @@ async def get_customer_stream(
     cache: Annotated[Redis, Depends(get_cache)],
     db: AsyncSession = Depends(get_db),
 ) -> StremioStreamsResponse:
-    customer, plex_config, is_valid = await get_valid_customer_and_config(customer_token, db)
+    try:
+        customer, plex_config, is_valid = await get_valid_customer_and_config(customer_token, db)
 
-    # BLOQUEO AUTOMÁTICO SI LA SUSCRIPCIÓN EXPIRÓ O ESTÁ SUSPENDIDA
-    if not is_valid or not plex_config:
-        return StremioStreamsResponse(streams=[])
+        # BLOQUEO AUTOMÁTICO SI LA SUSCRIPCIÓN ESTÁ SUSPENDIDA
+        if not is_valid or not plex_config:
+            return StremioStreamsResponse(streams=[])
 
-    # BLOQUEO AUTOMÁTICO SI EXCEDIO EL LÍMITE DE DISPOSITIVOS
-    device_allowed, _ = await check_and_register_device(customer, request, db)
-    if not device_allowed:
-        return StremioStreamsResponse(streams=[])
+        # BLOQUEO AUTOMÁTICO SI EXCEDIO EL LÍMITE DE DISPOSITIVOS
+        device_allowed, _ = await check_and_register_device(customer, request, db)
+        if not device_allowed:
+            return StremioStreamsResponse(streams=[])
 
-    config = build_addon_configuration(plex_config)
+        config = build_addon_configuration(plex_config)
 
-    if media_id.startswith('tt'):
-        plex_id = await stremio_to_plex_id(
+        if media_id.startswith('tt'):
+            plex_id = await stremio_to_plex_id(
+                client=http,
+                url=config.discovery_url,
+                token=config.access_token,
+                cache=cache,
+                stremio_id=media_id,
+                media_type=STREMIO_TO_PLEX_MEDIA_TYPE[stremio_type],
+            )
+            if not plex_id:
+                return StremioStreamsResponse(streams=[])
+        elif media_id.startswith('plexio:'):
+            plex_id = plexio_id_to_guid(media_id)
+        else:
+            plex_id = media_id
+
+        media = await get_media(
             client=http,
             url=config.discovery_url,
             token=config.access_token,
-            cache=cache,
-            stremio_id=media_id,
-            media_type=STREMIO_TO_PLEX_MEDIA_TYPE[stremio_type],
+            guid=plex_id,
         )
-        if not plex_id:
-            return StremioStreamsResponse()
-    elif media_id.startswith('plexio:'):
-        plex_id = plexio_id_to_guid(media_id)
-    else:
-        plex_id = media_id
-
-    media = await get_media(
-        client=http,
-        url=config.discovery_url,
-        token=config.access_token,
-        guid=plex_id,
-    )
-    return StremioStreamsResponse(
-        streams=chain.from_iterable(
-            m.get_stremio_streams(config) for m in media
-        ),
-    )
+        return StremioStreamsResponse(
+            streams=chain.from_iterable(
+                m.get_stremio_streams(config) for m in media
+            ),
+        )
+    except Exception as exc:
+        logger.exception('Error en get_customer_stream: %s', exc)
+        return StremioStreamsResponse(streams=[])
