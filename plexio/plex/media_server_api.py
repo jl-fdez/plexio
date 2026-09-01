@@ -254,3 +254,29 @@ async def stremio_to_plex_id(
     if plex_id:
         await cache.set(stremio_id, plex_id)
     return plex_id
+
+
+async def get_active_plex_sessions(
+    *,
+    client: ClientSession,
+    url: URL,
+    token: str,
+) -> list[dict]:
+    """
+    Obtiene las sesiones de reproducción activas de Plex Media Server (/status/sessions).
+    """
+    try:
+        json = await get_json(
+            client=client,
+            url=url / 'status/sessions',
+            params={
+                'X-Plex-Token': token,
+            },
+        )
+        if not isinstance(json, dict):
+            return []
+        media_container = json.get('MediaContainer', {})
+        metadata = media_container.get('Metadata', [])
+        return metadata if isinstance(metadata, list) else []
+    except Exception:
+        return []

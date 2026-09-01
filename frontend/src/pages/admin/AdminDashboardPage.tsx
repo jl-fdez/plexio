@@ -5,7 +5,9 @@ import {
   CheckCircle2,
   Clock,
   DollarSign,
+  Eye,
   Plus,
+  Radio,
   RefreshCw,
   Server,
   UserCheck,
@@ -20,24 +22,30 @@ import {
   getDashboardStats,
 } from '@/services/AdminCustomerService';
 import { getSavedPlexConfig, SavedPlexConfig } from '@/services/AdminPlexService';
+import { LiveActivityResponse, getLiveSessions } from '@/services/AdminActivityService';
 
 export const AdminDashboardPage: FC = () => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [plexConfig, setPlexConfig] = useState<SavedPlexConfig | null>(null);
   const [expiringCustomers, setExpiringCustomers] = useState<CustomerItem[]>([]);
+  const [liveData, setLiveData] = useState<LiveActivityResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [statsData, plexData, expiringData] = await Promise.all([
+      const [statsData, plexData, expiringData, liveSessionsData] = await Promise.all([
         getDashboardStats(),
         getSavedPlexConfig(),
         getCustomersList('', 'EXPIRING_SOON'),
+        getLiveSessions().catch(() => null),
       ]);
       setStats(statsData);
       setPlexConfig(plexData.config);
       setExpiringCustomers(expiringData);
+      if (liveSessionsData) {
+        setLiveData(liveSessionsData);
+      }
     } catch (e) {
       console.error('Error loading dashboard:', e);
     } finally {
@@ -110,6 +118,37 @@ export const AdminDashboardPage: FC = () => {
           <Link to="/admin/plex-settings">
             <Button size="sm" className="bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs">
               Configurar Plex
+            </Button>
+          </Link>
+        </div>
+      )}
+
+      {/* Widget de En Vivo si hay reproducciones activas */}
+      {liveData && liveData.sessions.length > 0 && (
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-rose-950/40 via-slate-900/60 to-slate-900/60 border border-rose-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/30 flex items-center justify-center text-rose-400 shrink-0">
+              <Radio className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-white text-sm">
+                  {liveData.sessions.length} Reproducción(es) en Vivo
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30">
+                  EN DIRECTO
+                </span>
+              </div>
+              <div className="text-xs text-slate-400 mt-0.5">
+                {liveData.sessions.map((s) => s.customer_name).slice(0, 3).join(', ')}
+                {liveData.sessions.length > 3 ? ` y ${liveData.sessions.length - 3} más` : ''} viendo contenido ahora mismo.
+              </div>
+            </div>
+          </div>
+          <Link to="/admin/live-activity">
+            <Button size="sm" className="bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs gap-1.5 shrink-0 shadow-lg shadow-rose-600/20">
+              <Eye className="w-3.5 h-3.5" />
+              Abrir Monitor en Vivo
             </Button>
           </Link>
         </div>

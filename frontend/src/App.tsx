@@ -7,6 +7,7 @@ import ProtectedFormPage from '@/pages/ProtectedFormPage.tsx';
 import { AdminCustomersPage } from '@/pages/admin/AdminCustomersPage';
 import { AdminDashboardPage } from '@/pages/admin/AdminDashboardPage';
 import { AdminLayout } from '@/pages/admin/AdminLayout';
+import { AdminLiveActivityPage } from '@/pages/admin/AdminLiveActivityPage';
 import { AdminLoginPage } from '@/pages/admin/AdminLoginPage';
 import { AdminPaymentsPage } from '@/pages/admin/AdminPaymentsPage';
 import { AdminPlexSettingsPage } from '@/pages/admin/AdminPlexSettingsPage';
@@ -25,6 +26,7 @@ function App() {
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<Navigate to="/admin/dashboard" replace />} />
             <Route path="dashboard" element={<AdminDashboardPage />} />
+            <Route path="live-activity" element={<AdminLiveActivityPage />} />
             <Route path="customers" element={<AdminCustomersPage />} />
             <Route path="plex-settings" element={<AdminPlexSettingsPage />} />
             <Route path="payments" element={<AdminPaymentsPage />} />

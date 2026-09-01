@@ -3,6 +3,7 @@ import {
   CreditCard,
   LayoutDashboard,
   LogOut,
+  Radio,
   Server,
   ShieldCheck,
   Users,
@@ -35,6 +36,11 @@ export const AdminLayout: FC = () => {
       label: 'Panel General',
       path: '/admin/dashboard',
       icon: LayoutDashboard,
+    },
+    {
+      label: 'Monitor en Vivo',
+      path: '/admin/live-activity',
+      icon: Radio,
     },
     {
       label: 'Clientes y Suscripciones',

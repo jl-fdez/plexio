@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from plexio.cache import init_cache
 from plexio.db.database import init_db
 from plexio.routers.addon import router as addon_router
+from plexio.routers.admin_activity import router as admin_activity_router
 from plexio.routers.admin_auth import router as admin_auth_router
 from plexio.routers.admin_customers import router as admin_customers_router
 from plexio.routers.admin_plex import router as admin_plex_router
@@ -91,6 +92,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 app.include_router(admin_auth_router)
 app.include_router(admin_plex_router)
 app.include_router(admin_customers_router)
+app.include_router(admin_activity_router)
 
 # Routers de Stremio
 app.include_router(customer_addon_router)
