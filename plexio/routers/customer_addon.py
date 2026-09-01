@@ -138,6 +138,50 @@ def build_addon_configuration(plex_config: PlexServerConfig | None) -> AddonConf
     )
 
 
+@router.get('/debug-manifest')
+async def debug_customer_manifest(
+    customer_token: str,
+    db: AsyncSession = Depends(get_db),
+):
+    customer, plex_config, is_valid = await get_valid_customer_and_config(customer_token, db)
+    if not plex_config:
+        return {'status': 'no_plex_config', 'customer': customer.name}
+
+    config = build_addon_configuration(plex_config)
+    catalogs = []
+    for section in config.sections:
+        sec_type_str = str(section.type).lower()
+        if 'show' in sec_type_str or 'series' in sec_type_str:
+            media_type = StremioMediaType.series
+        else:
+            media_type = StremioMediaType.movie
+
+        catalogs.append(
+            StremioCatalogManifest(
+                id=str(section.key),
+                type=media_type,
+                name=f'{section.title} | {config.server_name}',
+                extra=[
+                    {'name': 'skip', 'isRequired': False},
+                    {'name': 'search', 'isRequired': False},
+                    {'name': 'sort', 'options': list(SORT_OPTIONS.keys())},
+                ],
+            )
+        )
+
+    return {
+        'customer_name': customer.name,
+        'customer_status': customer.status,
+        'plex_config_id': plex_config.id,
+        'plex_config_server_name': plex_config.server_name,
+        'raw_sections_json': plex_config.sections_json,
+        'parsed_sections_count': len(config.sections),
+        'parsed_sections': [s.model_dump() for s in config.sections],
+        'catalogs_count': len(catalogs),
+        'catalogs': [c.model_dump() for c in catalogs],
+    }
+
+
 @router.get('/manifest.json', response_model_exclude_none=True)
 async def get_customer_manifest(
     customer_token: str,
