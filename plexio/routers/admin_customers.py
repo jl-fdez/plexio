@@ -38,6 +38,7 @@ class UpdateCustomerRequest(BaseModel):
 
 class RenewCustomerRequest(BaseModel):
     new_expiration_date: datetime
+    register_payment: bool = True
     amount: float = 0.0
     currency: str = 'USD'
     plan_name: str | None = 'Renovación'
@@ -348,7 +349,7 @@ async def renew_customer(
     customer.status = 'ACTIVE'
     customer.updated_at = datetime.utcnow()
 
-    if payload.amount > 0:
+    if payload.register_payment and payload.amount > 0:
         payment = PaymentRecord(
             customer_id=customer.id,
             customer_name=customer.name,

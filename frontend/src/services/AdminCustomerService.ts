@@ -62,6 +62,7 @@ export interface UpdateCustomerPayload {
 
 export interface RenewCustomerPayload {
   new_expiration_date: string; // ISO string
+  register_payment?: boolean;
   amount?: number;
   currency?: string;
   plan_name?: string;

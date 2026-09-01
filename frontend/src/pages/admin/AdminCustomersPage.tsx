@@ -67,6 +67,7 @@ export const AdminCustomersPage: FC = () => {
 
   // Formulario Renovación
   const [renewDate, setRenewDate] = useState('');
+  const [renewRegisterPayment, setRenewRegisterPayment] = useState(true);
   const [renewAmount, setRenewAmount] = useState('10.00');
   const [renewPlanName, setRenewPlanName] = useState('Renovación Mensual');
   const [renewPaymentMethod, setRenewPaymentMethod] = useState('Transferencia');
@@ -259,6 +260,7 @@ export const AdminCustomersPage: FC = () => {
     const base = currentExp > new Date() ? currentExp : new Date();
     base.setMonth(base.getMonth() + 1);
     setRenewDate(base.toISOString().slice(0, 16));
+    setRenewRegisterPayment(true);
     setRenewAmount('10.00');
     setRenewPlanName('Renovación Mensual');
     setIsRenewModalOpen(true);
@@ -271,10 +273,11 @@ export const AdminCustomersPage: FC = () => {
     try {
       await renewCustomer(selectedCustomer.id, {
         new_expiration_date: new Date(renewDate).toISOString(),
-        amount: parseFloat(renewAmount) || 0,
+        register_payment: renewRegisterPayment,
+        amount: renewRegisterPayment ? (parseFloat(renewAmount) || 0) : 0,
         currency: 'USD',
         plan_name: renewPlanName,
-        payment_method: renewPaymentMethod,
+        payment_method: renewRegisterPayment ? renewPaymentMethod : 'Sin cobro',
       });
       toast({
         title: 'Suscripción Renovada',
@@ -823,31 +826,47 @@ export const AdminCustomersPage: FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] text-slate-400 mb-1">Monto Cobrado ($)</label>
+              <div className="p-3.5 bg-slate-950/60 border border-slate-800 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                    Registrar Cobro / Pago de Renovación
+                  </label>
                   <input
-                    type="number"
-                    step="0.01"
-                    value={renewAmount}
-                    onChange={(e) => setRenewAmount(e.target.value)}
-                    className="w-full px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white"
+                    type="checkbox"
+                    checked={renewRegisterPayment}
+                    onChange={(e) => setRenewRegisterPayment(e.target.checked)}
+                    className="rounded border-slate-700 text-emerald-600 focus:ring-emerald-500"
                   />
                 </div>
-                <div>
-                  <label className="block text-[11px] text-slate-400 mb-1">Método de Pago</label>
-                  <select
-                    value={renewPaymentMethod}
-                    onChange={(e) => setRenewPaymentMethod(e.target.value)}
-                    className="w-full px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white"
-                  >
-                    <option value="Efectivo">Efectivo</option>
-                    <option value="Transferencia">Transferencia</option>
-                    <option value="Zelle">Zelle</option>
-                    <option value="PayPal">PayPal</option>
-                    <option value="Bizum / Tarjeta">Bizum / Tarjeta</option>
-                  </select>
-                </div>
+
+                {renewRegisterPayment && (
+                  <div className="grid grid-cols-2 gap-3 pt-2">
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">Monto ($ USD)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={renewAmount}
+                        onChange={(e) => setRenewAmount(e.target.value)}
+                        className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">Método de Pago</label>
+                      <select
+                        value={renewPaymentMethod}
+                        onChange={(e) => setRenewPaymentMethod(e.target.value)}
+                        className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white"
+                      >
+                        <option value="Efectivo">Efectivo</option>
+                        <option value="Transferencia">Transferencia</option>
+                        <option value="Zelle">Zelle</option>
+                        <option value="PayPal">PayPal</option>
+                        <option value="Bizum / Tarjeta">Bizum / Tarjeta</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
