@@ -361,7 +361,7 @@ async def get_customer_catalog(
             section_id=catalog_id,
             search=extras.get('search', ''),
             skip=extras.get('skip', 0),
-            sort=extras.get('sort', 'Title'),
+            sort=extras.get('sort', 'Date Added (desc)'),
         )
         return StremioCatalog(
             metas=[m.to_stremio_meta_review(config) for m in media],
