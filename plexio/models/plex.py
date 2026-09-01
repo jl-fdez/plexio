@@ -57,7 +57,10 @@ class PlexLibrarySection(BaseModel):
 
 
 class PlexMediaMeta(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel)
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
 
     guid: str
     type: PlexMediaType

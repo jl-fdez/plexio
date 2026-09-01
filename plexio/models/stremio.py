@@ -6,7 +6,10 @@ from plexio.models.utils import to_camel
 
 
 class StremioBase(BaseModel):
-    pass
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
 
 
 class StremioMediaType(str, Enum):
@@ -34,7 +37,10 @@ class StremioCatalogManifest(StremioBase):
 
 
 class StremioManifest(StremioBase):
-    model_config = ConfigDict(alias_generator=to_camel)
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
 
     id: str
     version: str
