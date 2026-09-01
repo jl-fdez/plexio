@@ -195,6 +195,8 @@ async def get_customer_manifest(
         exp_date = parse_expiration_date(customer.expiration_date)
         exp_date_str = exp_date.strftime('%Y-%m-%d')
 
+        logo_url = f"{str(request.base_url).rstrip('/')}/logo.png"
+
         if not is_valid:
             is_expired = (exp_date < datetime.utcnow())
             status_msg = f'La suscripción de {customer.name} venció el {exp_date_str}. Contacta al administrador para renovar.' if is_expired else f'El acceso para {customer.name} se encuentra pausado o suspendido. Contacta al administrador para habilitar tu servicio.'
@@ -204,6 +206,8 @@ async def get_customer_manifest(
                 version=__version__,
                 description=status_msg,
                 name=status_title,
+                logo=logo_url,
+                icon=logo_url,
                 resources=['stream'],
                 types=[StremioMediaType.movie, StremioMediaType.series],
                 catalogs=[],
@@ -221,6 +225,8 @@ async def get_customer_manifest(
                     version=__version__,
                     description=f'¡Límite de Dispositivos Excedido! Tu cuenta de {customer.name} sólo permite {customer.max_devices} dispositivo(s). {device_info}',
                     name='PX Central (Límite Dispositivos Superado)',
+                    logo=logo_url,
+                    icon=logo_url,
                     resources=['stream'],
                     types=[StremioMediaType.movie, StremioMediaType.series],
                     catalogs=[],
@@ -237,6 +243,8 @@ async def get_customer_manifest(
                 version=__version__,
                 description='Servidor en mantenimiento o no configurado por el administrador.',
                 name='PX Central (Mantenimiento)',
+                logo=logo_url,
+                icon=logo_url,
                 resources=['stream'],
                 types=[StremioMediaType.movie, StremioMediaType.series],
                 catalogs=[],
@@ -272,6 +280,8 @@ async def get_customer_manifest(
             version=__version__,
             description=f'PX Central - Suscripción activa de {customer.name} (Max {customer.max_devices} Disp.)',
             name=f'PX Central ({config.server_name})',
+            logo=logo_url,
+            icon=logo_url,
             resources=[
                 'stream',
                 'catalog',
@@ -296,6 +306,8 @@ async def get_customer_manifest(
             version=__version__,
             description=f'Detalle de error: {type(exc).__name__} - {str(exc)}',
             name='PX Central (Diagnóstico)',
+            logo=f"{str(request.base_url).rstrip('/')}/logo.png",
+            icon=f"{str(request.base_url).rstrip('/')}/logo.png",
             resources=['stream'],
             types=[StremioMediaType.movie, StremioMediaType.series],
             catalogs=[],

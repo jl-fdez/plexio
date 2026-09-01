@@ -61,6 +61,33 @@ class PlexLibrarySection(BaseModel):
     type: PlexMediaType | str
 
 
+def format_stream_resolution_name(video_resolution: str | None, width: int = 0) -> str:
+    res = str(video_resolution or '').lower().strip()
+    if '2160' in res or '4k' in res or 'uhd' in res or width >= 3840:
+        return '🖥️ UHD'
+    elif '1440' in res or '2k' in res or 'qhd' in res or width >= 2560:
+        return '🖥️ QHD'
+    elif '1080' in res or 'fhd' in res or width >= 1920:
+        return '🖥️ FHD'
+    elif '720' in res or 'hd' in res or width >= 1280:
+        return '🖥️ HD'
+    elif '576' in res or width >= 720:
+        return '🖥️ SD'
+    elif '480' in res or 'sd' in res or (0 < width <= 720):
+        return '🖥️ SD'
+    return '🖥️ ?'
+
+
+def format_file_size_bytes(size_bytes: int | float | None) -> str:
+    if not size_bytes or size_bytes <= 0:
+        return ''
+    gb = size_bytes / (1024 ** 3)
+    if gb >= 1.0:
+        return f'{gb:.1f} GB'
+    mb = size_bytes / (1024 ** 2)
+    return f'{mb:.0f} MB'
+
+
 class PlexMediaMeta(BaseModel):
     model_config = ConfigDict(
         alias_generator=to_camel,
@@ -84,6 +111,8 @@ class PlexMediaMeta(BaseModel):
     rating: float | None = None
     audience_rating: float | None = None
     year: int | None = None
+    index: int | None = None
+    parent_index: int | None = None
     tagline: str | None = None
     thumb: str | None = None
     art: str | None = None
@@ -186,22 +215,32 @@ class PlexMediaMeta(BaseModel):
 
             file_path = first_part.get('file', '')
             filename = os.path.basename(file_path) if file_path else self.title
-            name = f'{configuration.server_name} {self.library_section_title or ""}'.strip()
 
-            audio_languages = set()
-            subtitles_languages = set()
+            stream_name = format_stream_resolution_name(
+                media.get('videoResolution'),
+                media.get('width', 0),
+            )
+
+            u_audio_langs = []
+            u_sub_langs = []
             external_subtitles = []
             for part_stream in first_part.get('Stream', []):
                 if not isinstance(part_stream, dict):
                     continue
-                if part_stream.get('streamType') == 2:
-                    audio_languages.add(
-                        get_flag_emoji(part_stream.get('languageTag', 'Unknown')),
-                    )
-                elif part_stream.get('streamType') == 3:
-                    subtitles_languages.add(
-                        get_flag_emoji(part_stream.get('languageTag', 'Unknown')),
-                    )
+                stream_type = part_stream.get('streamType')
+                tag = (
+                    part_stream.get('languageTag')
+                    or part_stream.get('languageCode')
+                    or part_stream.get('language')
+                    or ''
+                ).upper().strip()
+
+                if stream_type == 2:  # Audio
+                    if tag and tag not in u_audio_langs and tag not in ('UNKNOWN', 'UND'):
+                        u_audio_langs.append(tag)
+                elif stream_type == 3:  # Subtítulos
+                    if tag and tag not in u_sub_langs and tag not in ('UNKNOWN', 'UND'):
+                        u_sub_langs.append(tag)
                     if 'key' in part_stream and part_stream['key']:
                         sub_key = part_stream['key'].lstrip('/')
                         external_subtitles.append(
@@ -218,20 +257,39 @@ class PlexMediaMeta(BaseModel):
                             }
                         )
 
-            description_template = '{filename}\n{quality}\n{languages}'
-            languages = '/'.join(sorted(audio_languages))
-            if subtitles_languages:
-                languages += f' ({"/".join(sorted(subtitles_languages))})'
+            # Construir Línea 1
+            line1_parts = [f'📁 {filename}']
+            if u_audio_langs:
+                line1_parts.append(f'• 🌐 {" / ".join(u_audio_langs)}')
+            if u_sub_langs:
+                line1_parts.append(f'• 💬 {" / ".join(u_sub_langs)}')
 
-            quality_description = f'Direct Play (Directo) {media.get("videoResolution", "")}'
+            if self.parent_index is not None and self.index is not None:
+                line1_parts.append(f'S{self.parent_index:02d} • E{self.index:02d}')
+            elif self.year:
+                line1_parts.append(f'({self.year})')
+
+            line1 = ' '.join(line1_parts)
+
+            # Construir Línea 2
+            size_formatted = format_file_size_bytes(first_part.get('size', 0))
+            line2 = f'📦 {size_formatted} ' if size_formatted else ''
+
+            # Construir Línea 3
+            service_name = configuration.server_name or 'Plex'
+            line3 = f'❤️ {service_name} • PX Central'
+
+            desc_lines = [line1]
+            if line2:
+                desc_lines.append(line2)
+            desc_lines.append(line3)
+            description = '\n'.join(desc_lines)
+
+            binge_group = f"plex-{media.get('videoResolution', 'direct')}"
             streams.append(
                 StremioStream(
-                    name=name,
-                    description=description_template.format(
-                        filename=filename,
-                        quality=quality_description,
-                        languages=languages,
-                    ),
+                    name=stream_name,
+                    description=description,
                     url=str(
                         configuration.streaming_url
                         / part_key
@@ -240,7 +298,7 @@ class PlexMediaMeta(BaseModel):
                         },
                     ),
                     subtitles=external_subtitles,
-                    behaviorHints={'bingeGroup': quality_description},
+                    behaviorHints={'bingeGroup': binge_group},
                 ),
             )
 
@@ -261,20 +319,18 @@ class PlexMediaMeta(BaseModel):
                     }
                 )
                 if configuration.include_transcode_original:
-                    quality_description = (
-                        f'Transcodificación {media.get("videoResolution", "")} (original)'
-                    )
+                    line3_trans_orig = f'❤️ {service_name} (Transcode Original) • PX Central'
+                    desc_orig_lines = [line1]
+                    if line2:
+                        desc_orig_lines.append(line2)
+                    desc_orig_lines.append(line3_trans_orig)
                     streams.append(
                         StremioStream(
-                            name=name,
-                            description=description_template.format(
-                                filename=filename,
-                                quality=quality_description,
-                                languages=languages,
-                            ),
+                            name=stream_name,
+                            description='\n'.join(desc_orig_lines),
                             url=str(transcode_url % {'videoQuality': 100}),
                             subtitles=external_subtitles,
-                            behaviorHints={'bingeGroup': quality_description},
+                            behaviorHints={'bingeGroup': f'{binge_group}-transcode-original'},
                         ),
                     )
 
@@ -285,26 +341,24 @@ class PlexMediaMeta(BaseModel):
                         quality_params = RESOLUTION_QUALITY_PARAMS[quality]
                         if media.get('width', 0) <= quality_params['min_width']:
                             continue
-                        quality_description = f'Transcodificación {quality_params["name"]}'
+                        trans_name = format_stream_resolution_name(quality_params['name'])
+                        line3_trans_down = f'❤️ {service_name} (Transcode {quality_params["name"]}) • PX Central'
+                        desc_down_lines = [line1, line3_trans_down]
                         streams.append(
                             StremioStream(
-                                name=name,
-                                description=description_template.format(
-                                    filename=filename,
-                                    quality=quality_description,
-                                    languages=languages,
-                                ),
+                                name=trans_name,
+                                description='\n'.join(desc_down_lines),
                                 url=str(transcode_url % quality_params['plex_args']),
                                 subtitles=external_subtitles,
-                                behaviorHints={'bingeGroup': quality_description},
+                                behaviorHints={'bingeGroup': f'{binge_group}-transcode-{quality_params["name"]}'},
                             ),
                         )
 
             if configuration.include_plex_tv and self.guid.startswith('plex:'):
                 streams.append(
                     StremioStream(
-                        name=name,
-                        description='Abrir en plex.tv (externo)',
+                        name=stream_name,
+                        description=f'📁 {filename}\n❤️ Abrir en plex.tv (externo) • PX Central',
                         externalUrl=f'https://app.plex.tv/#!/provider/tv.plex.provider.metadata/details?key=/library/metadata/{self.guid.split("/")[-1]}',
                     ),
                 )

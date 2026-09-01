@@ -2,7 +2,7 @@ from itertools import chain
 from typing import Annotated
 
 from aiohttp import ClientSession
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from redis.asyncio.client import Redis
 
 from plexio import __version__
@@ -40,6 +40,7 @@ router.dependencies.append(Depends(set_sentry_user))
     '/{installation_id}/{base64_cfg}/manifest.json', response_model_exclude_none=True
 )
 async def get_manifest(
+    request: Request,
     configuration: Annotated[
         AddonConfiguration | None,
         Depends(get_addon_configuration),
@@ -68,11 +69,15 @@ async def get_manifest(
         name += f' ({configuration.server_name})'
         description += f' Tu ID de instalación: {installation_id}'
 
+    logo_url = f"{str(request.base_url).rstrip('/')}/logo.png"
+
     return StremioManifest(
         id='com.stremio.plexio',
         version=__version__,
         description=description,
         name=name,
+        logo=logo_url,
+        icon=logo_url,
         resources=[
             'stream',
             'catalog',

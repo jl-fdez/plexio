@@ -88,6 +88,28 @@ async def global_exception_handler(request: Request, exc: Exception):
         },
     )
 
+import os
+from fastapi.responses import FileResponse
+
+STATIC_DIR = os.path.join(os.path.dirname(__file__), 'static')
+
+
+@app.get('/logo.png', include_in_schema=False)
+async def get_logo_png():
+    png_path = os.path.join(STATIC_DIR, 'logo.png')
+    if os.path.exists(png_path):
+        return FileResponse(png_path, media_type='image/png')
+    raise HTTPException(status_code=404, detail='Logo PNG no encontrado')
+
+
+@app.get('/logo.svg', include_in_schema=False)
+async def get_logo_svg():
+    svg_path = os.path.join(STATIC_DIR, 'logo.svg')
+    if os.path.exists(svg_path):
+        return FileResponse(svg_path, media_type='image/svg+xml')
+    raise HTTPException(status_code=404, detail='Logo SVG no encontrado')
+
+
 # Routers de administración
 app.include_router(admin_auth_router)
 app.include_router(admin_plex_router)
@@ -98,3 +120,4 @@ app.include_router(admin_activity_router)
 app.include_router(customer_addon_router)
 app.include_router(addon_router)
 app.include_router(configuration_router)
+

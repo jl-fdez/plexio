@@ -46,6 +46,8 @@ class StremioManifest(StremioBase):
     version: str
     description: str
     name: str
+    logo: str | None = None
+    icon: str | None = None
     resources: list[str | dict]
     types: list[StremioMediaType]
     catalogs: list[StremioCatalogManifest]
