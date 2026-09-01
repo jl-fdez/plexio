@@ -163,7 +163,7 @@ export const AdminLiveActivityPage: FC = () => {
         <div className="p-4 md:p-5 rounded-2xl bg-slate-900/60 border border-slate-800/80 backdrop-blur-xl relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Reproducciones Activas
+              Clientes Viendo en Vivo
             </span>
             <div className="w-8 h-8 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400">
               <Eye className="w-4 h-4" />
@@ -173,7 +173,7 @@ export const AdminLiveActivityPage: FC = () => {
             <span className="text-3xl font-extrabold text-white">
               {stats?.total_sessions || 0}
             </span>
-            <span className="text-xs text-slate-400">en curso</span>
+            <span className="text-xs text-slate-400">cliente(s)</span>
           </div>
         </div>
 

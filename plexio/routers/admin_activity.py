@@ -100,20 +100,17 @@ async def get_live_sessions(
             or ''
         ).strip()
 
-        # Cruce con base de datos de clientes
+        # Cruce estricto con base de datos de clientes registrados
         matched_device = ip_to_device.get(player_ip)
-        if matched_device and matched_device.customer:
-            customer_name = matched_device.customer.name
-            customer_id = matched_device.customer.id
-            customer_token = matched_device.customer.uuid_token
-            device_label = matched_device.device_name or player.get('device') or 'Dispositivo Stremio'
-            is_identified = True
-        else:
-            customer_name = player.get('title') or player.get('product') or 'Cliente de Red'
-            customer_id = None
-            customer_token = None
-            device_label = player.get('device') or player.get('platform') or 'Reproductor'
-            is_identified = False
+        if not matched_device or not matched_device.customer:
+            # Descartar sesiones ajenas (Plex Web, admin, tareas de fondo, usuarios externos)
+            continue
+
+        customer_name = matched_device.customer.name
+        customer_id = matched_device.customer.id
+        customer_token = matched_device.customer.uuid_token
+        device_label = matched_device.device_name or player.get('device') or 'Dispositivo Stremio'
+        is_identified = True
 
         # Formatear título del contenido
         media_type = s.get('type', 'video')
