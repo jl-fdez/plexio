@@ -162,7 +162,7 @@ async def debug_customer_manifest(
             StremioCatalogManifest(
                 id=str(section.key),
                 type=media_type,
-                name=f'{section.title} | {config.server_name}',
+                name=section.title,
                 extra=[
                     {'name': 'skip', 'isRequired': False},
                     {'name': 'search', 'isRequired': False},
@@ -269,7 +269,7 @@ async def get_customer_manifest(
                 StremioCatalogManifest(
                     id=str(section.key),
                     type=media_type,
-                    name=f'{section.title} | {config.server_name}',
+                    name=section.title,
                     extra=[
                         {'name': 'skip', 'isRequired': False},
                         {'name': 'search', 'isRequired': False},

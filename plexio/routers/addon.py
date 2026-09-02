@@ -57,7 +57,7 @@ async def get_manifest(
                 StremioCatalogManifest(
                     id=section.key,
                     type=PLEX_TO_STREMIO_MEDIA_TYPE[section.type],
-                    name=f'{section.title} | {configuration.server_name}',
+                    name=section.title,
                     extra=[
                         {'name': 'skip', 'isRequired': False},
                         {'name': 'search', 'isRequired': False},
