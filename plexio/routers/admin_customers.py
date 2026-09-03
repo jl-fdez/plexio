@@ -497,6 +497,7 @@ async def delete_customer_device(
         )
 
     await db.delete(device)
+    await db.commit()
     return {'success': True, 'message': f'Dispositivo {device.device_name} desvinculado correctamente.'}
 
 
@@ -512,6 +513,8 @@ async def reset_customer_devices(
 
     for d in devices:
         await db.delete(d)
+    await db.commit()
 
     return {'success': True, 'message': f'Se desvincularon todos los dispositivos ({len(devices)}) del cliente.'}
+
 
