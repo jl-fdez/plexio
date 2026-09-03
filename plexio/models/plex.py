@@ -331,14 +331,23 @@ class PlexMediaMeta(BaseModel):
 
             if self.key:
                 self_key = self.key.lstrip('/')
+                cid = getattr(customer, 'id', '0') if customer else '0'
+                rk = getattr(self, 'rating_key', '0') or '0'
+                session_id = f'stremio-c{cid}-{rk}-{i}'
                 transcode_params = {
                     'path': f'/{self_key}',
                     'mediaIndex': i,
+                    'partIndex': 0,
                     'protocol': 'hls',
                     'fastSeek': 1,
                     'copyts': 1,
                     'autoAdjustQuality': 0,
-                    'X-Plex-Platform': 'Chrome',
+                    'directPlay': 0,
+                    'directStream': 1,
+                    'directStreamAudio': 1,
+                    'location': 'wan',
+                    'session': session_id,
+                    'subtitles': 'burn',
                     **base_plex_params,
                 }
                 transcode_url = (
