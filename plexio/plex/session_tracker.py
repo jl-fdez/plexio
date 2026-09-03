@@ -1,6 +1,11 @@
+import asyncio
 import logging
 import time
 from typing import Any
+from aiohttp import ClientSession
+from yarl import URL
+
+from plexio.plex.media_server_api import report_plex_timeline
 
 logger = logging.getLogger(__name__)
 
@@ -10,6 +15,7 @@ _recent_streams: list[dict[str, Any]] = []
 # Sesiones de reproducción activas para mantener el heartbeat hacia Plex
 # Clave: f"{customer_id}_{rating_key}"
 _active_playbacks: dict[str, dict[str, Any]] = {}
+_running_heartbeats: dict[str, asyncio.Task] = {}
 
 
 def clean_expired_entries() -> None:
@@ -86,6 +92,123 @@ def register_active_playback(
 def get_active_playbacks() -> list[dict[str, Any]]:
     clean_expired_entries()
     return list(_active_playbacks.values())
+
+
+async def _heartbeat_worker(
+    session_id: str,
+    client: ClientSession,
+    discovery_url: URL,
+    token: str,
+    rating_key: str,
+    duration_ms: int,
+    client_id: str,
+    device_name: str,
+    started_at: float,
+) -> None:
+    max_duration_ms = duration_ms if duration_ms > 0 else int(3.5 * 3600 * 1000)
+    try:
+        # Reporte inicial inmediato
+        await report_plex_timeline(
+            client=client,
+            url=discovery_url,
+            token=token,
+            rating_key=rating_key,
+            state='playing',
+            time_ms=0,
+            duration_ms=duration_ms,
+            client_id=client_id,
+            device_name=device_name,
+        )
+
+        while True:
+            await asyncio.sleep(15)
+            now = time.time()
+            elapsed_ms = int((now - started_at) * 1000)
+            if elapsed_ms >= max_duration_ms:
+                await report_plex_timeline(
+                    client=client,
+                    url=discovery_url,
+                    token=token,
+                    rating_key=rating_key,
+                    state='stopped',
+                    time_ms=elapsed_ms,
+                    duration_ms=duration_ms,
+                    client_id=client_id,
+                    device_name=device_name,
+                )
+                break
+
+            await report_plex_timeline(
+                client=client,
+                url=discovery_url,
+                token=token,
+                rating_key=rating_key,
+                state='playing',
+                time_ms=elapsed_ms,
+                duration_ms=duration_ms,
+                client_id=client_id,
+                device_name=device_name,
+            )
+
+            if session_id in _active_playbacks:
+                _active_playbacks[session_id]['current_time_ms'] = elapsed_ms
+                _active_playbacks[session_id]['last_heartbeat'] = now
+    except asyncio.CancelledError:
+        logger.debug('Heartbeat cancelado para %s', session_id)
+    except Exception as exc:
+        logger.error('Error en heartbeat_worker para %s: %s', session_id, exc)
+    finally:
+        _running_heartbeats.pop(session_id, None)
+        _active_playbacks.pop(session_id, None)
+
+
+def start_plex_heartbeat(
+    client: ClientSession,
+    discovery_url: URL,
+    token: str,
+    customer_id: int,
+    customer_name: str,
+    customer_token: str | None,
+    device_name: str,
+    rating_key: str,
+    duration_ms: int = 0,
+    client_id: str = '',
+) -> None:
+    """Inicia el heartbeat en segundo plano hacia Plex cada 15 segundos."""
+    if not rating_key or not token or not discovery_url:
+        return
+
+    session_id = f"{customer_id}_{rating_key}"
+    prev_task = _running_heartbeats.get(session_id)
+    if prev_task and not prev_task.done():
+        prev_task.cancel()
+
+    effective_client_id = client_id or f'stremio-c{customer_id}'
+    register_active_playback(
+        customer_id=customer_id,
+        customer_name=customer_name,
+        customer_token=customer_token,
+        device_name=device_name,
+        rating_key=rating_key,
+        duration_ms=duration_ms,
+        client_id=effective_client_id,
+    )
+
+    started_at = time.time()
+    task = asyncio.create_task(
+        _heartbeat_worker(
+            session_id=session_id,
+            client=client,
+            discovery_url=discovery_url,
+            token=token,
+            rating_key=rating_key,
+            duration_ms=duration_ms,
+            client_id=effective_client_id,
+            device_name=device_name,
+            started_at=started_at,
+        )
+    )
+    _running_heartbeats[session_id] = task
 
 
 def find_matched_customer(

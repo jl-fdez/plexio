@@ -22,7 +22,11 @@ from plexio.models import PLEX_TO_STREMIO_MEDIA_TYPE, STREMIO_TO_PLEX_MEDIA_TYPE
 from plexio.models.addon import AddonConfiguration
 from plexio.models.plex import PlexLibrarySection, PlexMediaType, Resolution
 from plexio.plex.media_server_api import report_plex_timeline
-from plexio.plex.session_tracker import record_stream_activity, register_active_playback
+from plexio.plex.session_tracker import (
+    record_stream_activity,
+    register_active_playback,
+    start_plex_heartbeat,
+)
 from plexio.models.stremio import (
     StremioCatalog,
     StremioCatalogManifest,
@@ -518,7 +522,7 @@ async def get_customer_stream(
         proto = request.headers.get('x-forwarded-proto') or request.url.scheme
         api_base_url = f"{proto}://{host}" if host else str(request.base_url).rstrip('/')
 
-        # Notificar inmediatamente a Plex Media Server que el cliente inició la reproducción
+        # Iniciar heartbeat automático en segundo plano hacia Plex
         if media and config.discovery_url and config.access_token:
             first_m = media[0]
             first_rk = str(getattr(first_m, 'rating_key', '') or '')
@@ -527,28 +531,20 @@ async def get_customer_stream(
                 client_id = f'stremio-c{customer.id}-{customer.uuid_token[:8]}'
                 dev_label = f'{customer.name} ({device_info})'
                 try:
-                    await report_plex_timeline(
+                    start_plex_heartbeat(
                         client=http,
-                        url=config.discovery_url,
+                        discovery_url=config.discovery_url,
                         token=config.access_token,
-                        rating_key=first_rk,
-                        state='playing',
-                        time_ms=0,
-                        duration_ms=first_dur,
-                        client_id=client_id,
-                        device_name=dev_label,
-                    )
-                    register_active_playback(
                         customer_id=customer.id,
                         customer_name=customer.name,
                         customer_token=customer.uuid_token,
-                        device_name=device_info,
+                        device_name=dev_label,
                         rating_key=first_rk,
                         duration_ms=first_dur,
                         client_id=client_id,
                     )
                 except Exception as t_err:
-                    logger.debug('Aviso: error en timeline inicial de Plex: %s', t_err)
+                    logger.debug('Aviso: error iniciando heartbeat de Plex: %s', t_err)
 
         return StremioStreamsResponse(
             streams=chain.from_iterable(
@@ -566,7 +562,7 @@ async def get_customer_stream(
         return StremioStreamsResponse(streams=[])
 
 
-@router.get('/play/{rating_key}')
+@router.api_route('/play/{rating_key}', methods=['GET', 'HEAD'])
 async def play_customer_media(
     customer_token: str,
     rating_key: str,
@@ -576,8 +572,8 @@ async def play_customer_media(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Endpoint intermedio invocado directamente por el reproductor de Stremio:
-    1. Notifica a Plex Media Server (/:/timeline) que la reproducción está activa.
+    Endpoint intermedio invocado directamente por el reproductor de Stremio (soporta GET y HEAD):
+    1. Notifica y mantiene viva la sesión en Plex Media Server (/:/timeline) con heartbeat continuo.
     2. Registra la sesión en session_tracker.
     3. Redirige (HTTP 307) a Stremio hacia la URL de descarga directa de Plex.
     """
@@ -599,32 +595,25 @@ async def play_customer_media(
     client_id = f'stremio-c{customer.id}-{customer.uuid_token[:8]}'
     dev_label = f'{customer.name} ({device_info})'
 
-    # 1. Reportar timeline a Plex para que aparezca en el Dashboard ('Now Playing')
+    # 1. Iniciar heartbeat en segundo plano hacia Plex (mantiene viva la sesión cada 15 segundos)
     if config.discovery_url and config.access_token:
         try:
-            await report_plex_timeline(
+            start_plex_heartbeat(
                 client=http,
-                url=config.discovery_url,
+                discovery_url=config.discovery_url,
                 token=config.access_token,
-                rating_key=rating_key,
-                state='playing',
-                time_ms=0,
-                duration_ms=0,
-                client_id=client_id,
-                device_name=dev_label,
-            )
-            register_active_playback(
                 customer_id=customer.id,
                 customer_name=customer.name,
                 customer_token=customer.uuid_token,
-                device_name=device_info,
+                device_name=dev_label,
                 rating_key=rating_key,
+                duration_ms=0,
                 client_id=client_id,
             )
         except Exception as rep_err:
-            logger.error('Error reportando timeline en /play/%s: %s', rating_key, rep_err)
+            logger.error('Error iniciando heartbeat en /play/%s: %s', rating_key, rep_err)
 
-    # 2. Construir URL directa hacia Plex Media Server y redirigir
+    # 2. Construir URL directa hacia Plex Media Server y redirigir con 307
     stream_params = {
         'X-Plex-Token': config.access_token,
         'X-Plex-Client-Identifier': client_id,
