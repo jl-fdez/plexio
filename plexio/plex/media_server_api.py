@@ -284,3 +284,63 @@ async def get_active_plex_sessions(
         logger.error('Error al consultar sesiones activas de Plex (/status/sessions): %s', err)
         return []
 
+
+async def report_plex_timeline(
+    *,
+    client: ClientSession,
+    url: URL,
+    token: str,
+    rating_key: str,
+    state: str = 'playing',
+    time_ms: int = 0,
+    duration_ms: int = 0,
+    client_id: str = '',
+    device_name: str = '',
+) -> bool:
+    """
+    Envía un reporte de estado de reproducción al endpoint /:/timeline de Plex Media Server
+    para que la sesión aparezca en el Dashboard oficial de Plex ('Now Playing') y en /status/sessions.
+    """
+    if not rating_key or not token:
+        return False
+
+    try:
+        timeline_url = url / ':/timeline'
+        headers = {
+            'X-Plex-Token': token,
+            'X-Plex-Client-Identifier': client_id or 'stremio-client',
+            'X-Plex-Device-Name': device_name or 'Stremio',
+            'X-Plex-Product': 'Stremio',
+            'X-Plex-Platform': 'Stremio',
+            'X-Plex-Device': device_name or 'Stremio',
+            'Accept': 'application/json',
+        }
+        params = {
+            'ratingKey': str(rating_key),
+            'key': f'/library/metadata/{rating_key}',
+            'state': state,
+            'time': str(max(0, int(time_ms))),
+            'duration': str(max(0, int(duration_ms))),
+            'X-Plex-Token': token,
+            'X-Plex-Client-Identifier': client_id or 'stremio-client',
+            'X-Plex-Device-Name': device_name or 'Stremio',
+        }
+        async with client.get(
+            timeline_url,
+            headers=headers,
+            params=params,
+            timeout=10,
+        ) as resp:
+            logger.info(
+                'Reporte de timeline a Plex para ratingKey %s [%s, time=%sms]: HTTP %s',
+                rating_key,
+                state,
+                time_ms,
+                resp.status,
+            )
+            return resp.status in (200, 201)
+    except Exception as err:
+        logger.error('Error reportando timeline a Plex para ratingKey %s: %s', rating_key, err)
+        return False
+
+

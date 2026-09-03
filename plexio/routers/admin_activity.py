@@ -1,4 +1,6 @@
+import asyncio
 import logging
+import time
 from typing import Annotated
 from aiohttp import ClientSession
 from fastapi import APIRouter, Depends
@@ -11,8 +13,8 @@ from plexio.auth.security import get_current_admin
 from plexio.db.database import get_db
 from plexio.db.models import AdminUser, Customer, CustomerDevice, PlexServerConfig
 from plexio.dependencies import get_http_client
-from plexio.plex.media_server_api import get_active_plex_sessions
-from plexio.plex.session_tracker import find_matched_customer
+from plexio.plex.media_server_api import get_active_plex_sessions, report_plex_timeline
+from plexio.plex.session_tracker import find_matched_customer, get_active_playbacks
 
 logger = logging.getLogger(__name__)
 
@@ -69,14 +71,38 @@ async def get_live_sessions(
             'sessions': [],
         }
 
-    # 2. Consultar sesiones activas en Plex Media Server (/status/sessions)
+    # 2. Sincronizar y mantener vivas las sesiones de reproducción activas de este API en Plex
+    active_plays = get_active_playbacks()
+    if active_plays and plex_config.discovery_url and plex_config.access_token:
+        for ap in active_plays:
+            now = time.time()
+            elapsed_sec = int(now - ap.get('started_at', now))
+            current_time_ms = elapsed_sec * 1000
+            dur = ap.get('duration_ms', 0)
+            if dur <= 0 or current_time_ms < dur:
+                try:
+                    await report_plex_timeline(
+                        client=http,
+                        url=URL(plex_config.discovery_url),
+                        token=plex_config.access_token,
+                        rating_key=ap['rating_key'],
+                        state='playing',
+                        time_ms=current_time_ms,
+                        duration_ms=dur,
+                        client_id=ap.get('client_id', ''),
+                        device_name=ap.get('device_name', ''),
+                    )
+                except Exception as hb_err:
+                    logger.debug('Error en heartbeat de Plex timeline: %s', hb_err)
+
+    # 3. Consultar sesiones activas en Plex Media Server (/status/sessions)
     raw_sessions = await get_active_plex_sessions(
         client=http,
         url=URL(plex_config.discovery_url),
         token=plex_config.access_token,
     )
 
-    # 3. Cargar clientes y dispositivos registrados para correlación inteligente
+    # 4. Cargar clientes y dispositivos registrados para correlación inteligente
     stmt_c = select(Customer)
     res_c = await db.execute(stmt_c)
     all_customers = res_c.scalars().all()

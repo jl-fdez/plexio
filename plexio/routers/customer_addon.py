@@ -5,6 +5,7 @@ from itertools import chain
 from typing import Annotated
 from aiohttp import ClientSession
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import RedirectResponse
 from redis.asyncio.client import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +21,8 @@ from plexio.dependencies import get_cache, get_http_client
 from plexio.models import PLEX_TO_STREMIO_MEDIA_TYPE, STREMIO_TO_PLEX_MEDIA_TYPE
 from plexio.models.addon import AddonConfiguration
 from plexio.models.plex import PlexLibrarySection, PlexMediaType, Resolution
-from plexio.plex.session_tracker import record_stream_activity
+from plexio.plex.media_server_api import report_plex_timeline
+from plexio.plex.session_tracker import record_stream_activity, register_active_playback
 from plexio.models.stremio import (
     StremioCatalog,
     StremioCatalogManifest,
@@ -511,11 +513,126 @@ async def get_customer_stream(
         except Exception as track_err:
             logger.error('Error registrando actividad de stream en session_tracker: %s', track_err)
 
+        # Resolver URL base pública del API para enlaces interactivos
+        host = request.headers.get('x-forwarded-host') or request.headers.get('host') or request.url.netloc
+        proto = request.headers.get('x-forwarded-proto') or request.url.scheme
+        api_base_url = f"{proto}://{host}" if host else str(request.base_url).rstrip('/')
+
+        # Notificar inmediatamente a Plex Media Server que el cliente inició la reproducción
+        if media and config.discovery_url and config.access_token:
+            first_m = media[0]
+            first_rk = str(getattr(first_m, 'rating_key', '') or '')
+            first_dur = int(getattr(first_m, 'duration', 0) or 0)
+            if first_rk:
+                client_id = f'stremio-c{customer.id}-{customer.uuid_token[:8]}'
+                dev_label = f'{customer.name} ({device_info})'
+                try:
+                    await report_plex_timeline(
+                        client=http,
+                        url=config.discovery_url,
+                        token=config.access_token,
+                        rating_key=first_rk,
+                        state='playing',
+                        time_ms=0,
+                        duration_ms=first_dur,
+                        client_id=client_id,
+                        device_name=dev_label,
+                    )
+                    register_active_playback(
+                        customer_id=customer.id,
+                        customer_name=customer.name,
+                        customer_token=customer.uuid_token,
+                        device_name=device_info,
+                        rating_key=first_rk,
+                        duration_ms=first_dur,
+                        client_id=client_id,
+                    )
+                except Exception as t_err:
+                    logger.debug('Aviso: error en timeline inicial de Plex: %s', t_err)
+
         return StremioStreamsResponse(
             streams=chain.from_iterable(
-                m.get_stremio_streams(config, customer=customer, device_name=device_info) for m in media
+                m.get_stremio_streams(
+                    config,
+                    customer=customer,
+                    device_name=device_info,
+                    api_base_url=api_base_url,
+                )
+                for m in media
             ),
         )
     except Exception as exc:
         logger.exception('Error en get_customer_stream: %s', exc)
         return StremioStreamsResponse(streams=[])
+
+
+@router.get('/play/{rating_key}')
+async def play_customer_media(
+    customer_token: str,
+    rating_key: str,
+    part_key: str,
+    request: Request,
+    http: Annotated[ClientSession, Depends(get_http_client)],
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Endpoint intermedio invocado directamente por el reproductor de Stremio:
+    1. Notifica a Plex Media Server (/:/timeline) que la reproducción está activa.
+    2. Registra la sesión en session_tracker.
+    3. Redirige (HTTP 307) a Stremio hacia la URL de descarga directa de Plex.
+    """
+    customer, plex_config, is_valid = await get_valid_customer_and_config(customer_token, db)
+    if not is_valid or not plex_config:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail='Acceso denegado o suscripción vencida',
+        )
+
+    device_allowed, device_info = await check_and_register_device(customer, request, db)
+    if not device_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail='Límite de dispositivos excedido',
+        )
+
+    config = build_addon_configuration(plex_config)
+    client_id = f'stremio-c{customer.id}-{customer.uuid_token[:8]}'
+    dev_label = f'{customer.name} ({device_info})'
+
+    # 1. Reportar timeline a Plex para que aparezca en el Dashboard ('Now Playing')
+    if config.discovery_url and config.access_token:
+        try:
+            await report_plex_timeline(
+                client=http,
+                url=config.discovery_url,
+                token=config.access_token,
+                rating_key=rating_key,
+                state='playing',
+                time_ms=0,
+                duration_ms=0,
+                client_id=client_id,
+                device_name=dev_label,
+            )
+            register_active_playback(
+                customer_id=customer.id,
+                customer_name=customer.name,
+                customer_token=customer.uuid_token,
+                device_name=device_info,
+                rating_key=rating_key,
+                client_id=client_id,
+            )
+        except Exception as rep_err:
+            logger.error('Error reportando timeline en /play/%s: %s', rating_key, rep_err)
+
+    # 2. Construir URL directa hacia Plex Media Server y redirigir
+    stream_params = {
+        'X-Plex-Token': config.access_token,
+        'X-Plex-Client-Identifier': client_id,
+        'X-Plex-Product': 'Stremio',
+        'X-Plex-Device': device_info,
+        'X-Plex-Device-Name': dev_label,
+        'X-Plex-Platform': 'Stremio',
+        'X-Plex-Username': customer.name,
+    }
+    direct_url = str(config.streaming_url / part_key.lstrip('/') % stream_params)
+    return RedirectResponse(url=direct_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)

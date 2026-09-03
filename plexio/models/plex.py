@@ -198,7 +198,8 @@ class PlexMediaMeta(BaseModel):
             genres=[g['tag'] for g in self.genre if isinstance(g, dict) and 'tag' in g],
         )
 
-    def get_stremio_streams(self, configuration, customer=None, device_name=None):
+    def get_stremio_streams(self, configuration, customer=None, device_name=None, api_base_url=None):
+        import urllib.parse
         from plexio.models.stremio import StremioStream
 
         # Parámetros base para Plex Media Server
@@ -303,15 +304,26 @@ class PlexMediaMeta(BaseModel):
             description = '\n'.join(desc_lines)
 
             binge_group = f"plex-{media.get('videoResolution', 'direct')}"
+
+            # Construir URL del stream: Si hay api_base_url y cliente, pasar por el endpoint de reproducción
+            # para activar automáticamente el estado en el Dashboard de Plex (Now Playing)
+            effective_rk = str(self.rating_key or '')
+            if api_base_url and customer and effective_rk:
+                c_token = getattr(customer, 'uuid_token', '')
+                quoted_part = urllib.parse.quote(part_key, safe='')
+                direct_stream_url = f"{api_base_url.rstrip('/')}/u/{c_token}/play/{effective_rk}?part_key={quoted_part}"
+            else:
+                direct_stream_url = str(
+                    configuration.streaming_url
+                    / part_key
+                    % base_plex_params,
+                )
+
             streams.append(
                 StremioStream(
                     name=stream_name,
                     description=description,
-                    url=str(
-                        configuration.streaming_url
-                        / part_key
-                        % base_plex_params,
-                    ),
+                    url=direct_stream_url,
                     subtitles=external_subtitles,
                     behaviorHints={'bingeGroup': binge_group},
                 ),

@@ -7,11 +7,20 @@ logger = logging.getLogger(__name__)
 SESSION_TTL_SECONDS = 3 * 3600
 _recent_streams: list[dict[str, Any]] = []
 
+# Sesiones de reproducción activas para mantener el heartbeat hacia Plex
+# Clave: f"{customer_id}_{rating_key}"
+_active_playbacks: dict[str, dict[str, Any]] = {}
+
 
 def clean_expired_entries() -> None:
-    global _recent_streams
+    global _recent_streams, _active_playbacks
     cutoff = time.time() - SESSION_TTL_SECONDS
     _recent_streams = [entry for entry in _recent_streams if entry['timestamp'] >= cutoff]
+    
+    # Limpiar reproducciones inactivas de más de 4 horas
+    expired_keys = [k for k, v in _active_playbacks.items() if v.get('last_heartbeat', 0) < cutoff]
+    for k in expired_keys:
+        _active_playbacks.pop(k, None)
 
 
 def record_stream_activity(
@@ -39,6 +48,44 @@ def record_stream_activity(
     _recent_streams.insert(0, entry)
     if len(_recent_streams) > 500:
         _recent_streams.pop()
+
+
+def register_active_playback(
+    customer_id: int,
+    customer_name: str,
+    customer_token: str | None,
+    device_name: str,
+    rating_key: str,
+    duration_ms: int = 0,
+    client_id: str = '',
+) -> None:
+    """Registra o refresca una reproducción activa para mantener la presencia en Plex."""
+    clean_expired_entries()
+    session_id = f"{customer_id}_{rating_key}"
+    now = time.time()
+    existing = _active_playbacks.get(session_id)
+    if existing:
+        existing['last_heartbeat'] = now
+        if duration_ms > 0:
+            existing['duration_ms'] = duration_ms
+    else:
+        _active_playbacks[session_id] = {
+            'customer_id': customer_id,
+            'customer_name': customer_name,
+            'customer_token': customer_token,
+            'device_name': device_name,
+            'client_id': client_id or f'stremio-c{customer_id}',
+            'rating_key': str(rating_key),
+            'duration_ms': duration_ms,
+            'current_time_ms': 0,
+            'started_at': now,
+            'last_heartbeat': now,
+        }
+
+
+def get_active_playbacks() -> list[dict[str, Any]]:
+    clean_expired_entries()
+    return list(_active_playbacks.values())
 
 
 def find_matched_customer(
