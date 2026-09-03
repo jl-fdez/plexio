@@ -277,6 +277,10 @@ async def get_active_plex_sessions(
             return []
         media_container = json.get('MediaContainer', {})
         metadata = media_container.get('Metadata', [])
+        if isinstance(metadata, dict):
+            return [metadata]
         return metadata if isinstance(metadata, list) else []
-    except Exception:
+    except Exception as err:
+        logger.error('Error al consultar sesiones activas de Plex (/status/sessions): %s', err)
         return []
+

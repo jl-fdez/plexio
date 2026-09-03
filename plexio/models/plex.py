@@ -198,8 +198,26 @@ class PlexMediaMeta(BaseModel):
             genres=[g['tag'] for g in self.genre if isinstance(g, dict) and 'tag' in g],
         )
 
-    def get_stremio_streams(self, configuration):
+    def get_stremio_streams(self, configuration, customer=None, device_name=None):
         from plexio.models.stremio import StremioStream
+
+        # Parámetros base para Plex Media Server
+        base_plex_params = {
+            'X-Plex-Token': configuration.access_token,
+        }
+        if customer:
+            c_id = getattr(customer, 'id', '')
+            c_name = getattr(customer, 'name', 'Cliente')
+            c_token = getattr(customer, 'uuid_token', '')
+            dev_str = (device_name or 'Stremio').strip()
+            base_plex_params.update({
+                'X-Plex-Client-Identifier': f'stremio-c{c_id}-{c_token[:8]}',
+                'X-Plex-Product': 'Stremio',
+                'X-Plex-Device': dev_str,
+                'X-Plex-Device-Name': f'{c_name} ({dev_str})',
+                'X-Plex-Platform': 'Stremio',
+                'X-Plex-Username': c_name,
+            })
 
         streams = []
         for i, media in enumerate(self.media):
@@ -292,9 +310,7 @@ class PlexMediaMeta(BaseModel):
                     url=str(
                         configuration.streaming_url
                         / part_key
-                        % {
-                            'X-Plex-Token': configuration.access_token,
-                        },
+                        % base_plex_params,
                     ),
                     subtitles=external_subtitles,
                     behaviorHints={'bingeGroup': binge_group},
@@ -303,19 +319,20 @@ class PlexMediaMeta(BaseModel):
 
             if self.key:
                 self_key = self.key.lstrip('/')
+                transcode_params = {
+                    'path': f'/{self_key}',
+                    'mediaIndex': i,
+                    'protocol': 'hls',
+                    'fastSeek': 1,
+                    'copyts': 1,
+                    'autoAdjustQuality': 0,
+                    'X-Plex-Platform': 'Chrome',
+                    **base_plex_params,
+                }
                 transcode_url = (
                     configuration.streaming_url
                     / 'video/:/transcode/universal/start.m3u8'
-                    % {
-                        'path': f'/{self_key}',
-                        'mediaIndex': i,
-                        'protocol': 'hls',
-                        'fastSeek': 1,
-                        'copyts': 1,
-                        'autoAdjustQuality': 0,
-                        'X-Plex-Platform': 'Chrome',
-                        'X-Plex-Token': configuration.access_token,
-                    }
+                    % transcode_params
                 )
                 if configuration.include_transcode_original:
                     line3_trans_orig = '❤️ Transcode Original • PX Central'

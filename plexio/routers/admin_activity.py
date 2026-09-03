@@ -9,13 +9,26 @@ from yarl import URL
 
 from plexio.auth.security import get_current_admin
 from plexio.db.database import get_db
-from plexio.db.models import AdminUser, CustomerDevice, PlexServerConfig
+from plexio.db.models import AdminUser, Customer, CustomerDevice, PlexServerConfig
 from plexio.dependencies import get_http_client
 from plexio.plex.media_server_api import get_active_plex_sessions
+from plexio.plex.session_tracker import find_matched_customer
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix='/api/admin/activity', tags=['Admin Live Activity'])
+
+
+def normalize_ip(ip: str) -> str:
+    """Normaliza direcciones IP para cruce confiable."""
+    if not ip:
+        return ''
+    clean = ip.strip()
+    if clean.startswith('::ffff:'):
+        clean = clean[7:]
+    if clean in ('::1', 'localhost'):
+        return '127.0.0.1'
+    return clean
 
 
 def format_time_ms(ms: int) -> str:
@@ -63,16 +76,23 @@ async def get_live_sessions(
         token=plex_config.access_token,
     )
 
-    # 3. Cargar dispositivos registrados con sus clientes para cruce de datos
+    # 3. Cargar clientes y dispositivos registrados para correlación inteligente
+    stmt_c = select(Customer)
+    res_c = await db.execute(stmt_c)
+    all_customers = res_c.scalars().all()
+    cust_by_id = {c.id: c for c in all_customers}
+
     stmt_dev = select(CustomerDevice).options(selectinload(CustomerDevice.customer))
     res_dev = await db.execute(stmt_dev)
     all_devices = res_dev.scalars().all()
 
-    # Mapeo de IP -> Dispositivo / Cliente
+    # Mapeo de IP normalizada -> Dispositivo / Cliente
     ip_to_device: dict[str, CustomerDevice] = {}
     for dev in all_devices:
         if dev.ip_address:
-            ip_to_device[dev.ip_address.strip()] = dev
+            norm = normalize_ip(dev.ip_address)
+            if norm:
+                ip_to_device[norm] = dev
 
     streaming_base = str(plex_config.streaming_url or plex_config.discovery_url).rstrip('/')
     token = plex_config.access_token
@@ -89,28 +109,91 @@ async def get_live_sessions(
         player = s.get('Player', {}) or {}
         session_info = s.get('Session', {}) or {}
         transcode_info = s.get('TranscodeSession', {}) or {}
+        user_info = s.get('User', {}) or {}
         media_list = s.get('Media', []) or []
         first_media = media_list[0] if media_list and isinstance(media_list[0], dict) else {}
 
-        # Determinar IP del reproductor
-        player_ip = (
+        # Determinar IP del reproductor y normalizar
+        player_raw_ip = (
             player.get('address')
             or player.get('remotePublicAddress')
             or session_info.get('location', '')
             or ''
         ).strip()
+        norm_ip = normalize_ip(player_raw_ip)
 
-        # Cruce estricto con base de datos de clientes registrados
-        matched_device = ip_to_device.get(player_ip)
-        if not matched_device or not matched_device.customer:
-            # Descartar sesiones ajenas (Plex Web, admin, tareas de fondo, usuarios externos)
-            continue
+        player_machine_id = str(player.get('machineIdentifier', '') or '').strip()
+        player_title = str(player.get('title', '') or '').strip()
+        player_device_str = str(player.get('device', '') or '').strip()
+        player_product_str = str(player.get('product', '') or '').strip()
+        plex_user_title = str(user_info.get('title', '') or '').strip()
 
-        customer_name = matched_device.customer.name
-        customer_id = matched_device.customer.id
-        customer_token = matched_device.customer.uuid_token
-        device_label = matched_device.device_name or player.get('device') or 'Dispositivo Stremio'
-        is_identified = True
+        rating_key = str(s.get('ratingKey', '') or '')
+        item_key = str(s.get('key', '') or '')
+        content_title = str(s.get('title', '') or '')
+
+        matched_customer = None
+        matched_device_label = None
+        is_identified = False
+
+        # Estrategia 1: Identificación precisa por machineIdentifier inyectado en Stremio
+        # Formato: stremio-c<customer_id>-<token_prefix>
+        if 'stremio-c' in player_machine_id:
+            try:
+                sub = player_machine_id[player_machine_id.find('stremio-c') + 9:]
+                cid_str = sub.split('-')[0]
+                if cid_str.isdigit() and int(cid_str) in cust_by_id:
+                    matched_customer = cust_by_id[int(cid_str)]
+                    matched_device_label = player_title or player_device_str or 'Stremio'
+                    is_identified = True
+            except Exception:
+                pass
+
+        # Estrategia 2: Identificación por session_tracker (reproducciones solicitadas recientemente)
+        if not matched_customer:
+            tracked = find_matched_customer(
+                rating_key=rating_key,
+                key=item_key,
+                title=content_title,
+                player_ip=player_raw_ip,
+                client_identifier=player_machine_id,
+            )
+            if tracked and tracked.get('customer_id') in cust_by_id:
+                matched_customer = cust_by_id[tracked['customer_id']]
+                matched_device_label = tracked.get('device_name') or player_title or 'Stremio'
+                is_identified = True
+
+        # Estrategia 3: Identificación por IP normalizada en base de datos de dispositivos
+        if not matched_customer and norm_ip:
+            matched_dev = ip_to_device.get(norm_ip)
+            if matched_dev and matched_dev.customer:
+                matched_customer = matched_dev.customer
+                matched_device_label = matched_dev.device_name or player_title or 'Stremio'
+                is_identified = True
+
+        # Estrategia 4: Identificación por coincidencia de nombre de cliente en título de reproductor o usuario
+        if not matched_customer:
+            candidates = [player_title.lower(), plex_user_title.lower(), player_device_str.lower()]
+            for c in all_customers:
+                c_name_lower = c.name.lower()
+                if any(c_name_lower in cand for cand in candidates if cand):
+                    matched_customer = c
+                    matched_device_label = player_title or player_device_str or 'Stremio'
+                    is_identified = True
+                    break
+
+        # Asignar datos de cliente (o modo no identificado para NUNCA ocultar sesiones activas)
+        if matched_customer:
+            customer_name = matched_customer.name
+            customer_id = matched_customer.id
+            customer_token = matched_customer.uuid_token
+            device_label = matched_device_label or player_device_str or 'Dispositivo Stremio'
+        else:
+            is_identified = False
+            customer_name = player_title or plex_user_title or 'Cliente Stremio / En Red'
+            customer_id = None
+            customer_token = None
+            device_label = player_device_str or player_product_str or 'Reproductor en Vivo'
 
         # Formatear título del contenido
         media_type = s.get('type', 'video')
@@ -122,12 +205,18 @@ async def get_live_sessions(
             full_title = f'{grandparent} - T{p_idx:02d}E{idx:02d} "{ep_title}"'
             subtitle = f'Temporada {p_idx}, Episodio {idx}'
         else:
-            full_title = s.get('title', 'Película sin título')
+            full_title = s.get('title', 'Película')
             year = s.get('year', '')
             subtitle = f'Película ({year})' if year else 'Película'
 
-        # Duración y Progreso
-        duration_ms = int(s.get('duration', 0) or 0)
+        # Duración y Progreso robusto
+        first_part = first_media.get('Part', [{}])[0] if first_media.get('Part') else {}
+        duration_ms = int(
+            s.get('duration')
+            or first_media.get('duration')
+            or first_part.get('duration')
+            or 0
+        )
         view_offset_ms = int(s.get('viewOffset', 0) or 0)
         progress_pct = round((view_offset_ms / duration_ms) * 100, 1) if duration_ms > 0 else 0.0
 
@@ -156,7 +245,7 @@ async def get_live_sessions(
         sessions_output.append(
             {
                 'session_key': str(s.get('sessionKey') or s.get('ratingKey') or id(s)),
-                'rating_key': str(s.get('ratingKey', '')),
+                'rating_key': rating_key,
                 'media_type': media_type,
                 'title': full_title,
                 'subtitle': subtitle,
@@ -169,11 +258,11 @@ async def get_live_sessions(
                 'duration_formatted': format_time_ms(duration_ms),
                 'view_offset_formatted': format_time_ms(view_offset_ms),
                 'progress_percentage': min(100.0, max(0.0, progress_pct)),
-                'player_name': player.get('title', 'Stremio'),
-                'player_product': player.get('product', 'Stremio'),
-                'player_device': player.get('device', 'Desconocido'),
+                'player_name': player_title or player_product_str or 'Stremio',
+                'player_product': player_product_str or 'Stremio',
+                'player_device': player_device_str or 'Desconocido',
                 'player_platform': player.get('platform', ''),
-                'player_ip': player_ip,
+                'player_ip': player_raw_ip,
                 'stream_mode': stream_mode,
                 'video_resolution': first_media.get('videoResolution', ''),
                 'video_codec': first_media.get('videoCodec', ''),

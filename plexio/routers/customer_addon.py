@@ -13,13 +13,14 @@ from yarl import URL
 logger = logging.getLogger(__name__)
 
 from plexio import __version__
-from plexio.auth.devices import check_and_register_device
+from plexio.auth.devices import check_and_register_device, get_client_ip
 from plexio.db.database import get_db
 from plexio.db.models import Customer, PlexServerConfig
 from plexio.dependencies import get_cache, get_http_client
 from plexio.models import PLEX_TO_STREMIO_MEDIA_TYPE, STREMIO_TO_PLEX_MEDIA_TYPE
 from plexio.models.addon import AddonConfiguration
 from plexio.models.plex import PlexLibrarySection, PlexMediaType, Resolution
+from plexio.plex.session_tracker import record_stream_activity
 from plexio.models.stremio import (
     StremioCatalog,
     StremioCatalogManifest,
@@ -448,7 +449,7 @@ async def get_customer_stream(
             return StremioStreamsResponse(streams=[])
 
         # BLOQUEO AUTOMÁTICO SI EXCEDIO EL LÍMITE DE DISPOSITIVOS
-        device_allowed, _ = await check_and_register_device(customer, request, db)
+        device_allowed, device_info = await check_and_register_device(customer, request, db)
         if not device_allowed:
             return StremioStreamsResponse(streams=[])
 
@@ -476,9 +477,29 @@ async def get_customer_stream(
             token=config.access_token,
             guid=plex_id,
         )
+
+        # Registrar actividad en session_tracker para emparejamiento inteligente de sesiones en vivo
+        try:
+            client_ip = get_client_ip(request)
+            rk_list = [str(getattr(m, 'rating_key', '')) for m in media if getattr(m, 'rating_key', None)]
+            k_list = [str(getattr(m, 'key', '')) for m in media if getattr(m, 'key', None)]
+            t_list = [str(getattr(m, 'title', '')) for m in media if getattr(m, 'title', None)]
+            record_stream_activity(
+                customer_id=customer.id,
+                customer_name=customer.name,
+                customer_token=customer.uuid_token,
+                device_name=device_info,
+                ip_address=client_ip,
+                rating_keys=rk_list,
+                keys=k_list,
+                titles=t_list,
+            )
+        except Exception as track_err:
+            logger.error('Error registrando actividad de stream en session_tracker: %s', track_err)
+
         return StremioStreamsResponse(
             streams=chain.from_iterable(
-                m.get_stremio_streams(config) for m in media
+                m.get_stremio_streams(config, customer=customer, device_name=device_info) for m in media
             ),
         )
     except Exception as exc:
