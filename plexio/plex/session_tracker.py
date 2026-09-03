@@ -43,6 +43,8 @@ def record_stream_activity(
 
 def find_matched_customer(
     rating_key: str = '',
+    parent_rating_key: str = '',
+    grandparent_rating_key: str = '',
     key: str = '',
     title: str = '',
     player_ip: str = '',
@@ -50,7 +52,9 @@ def find_matched_customer(
 ) -> dict[str, Any] | None:
     clean_expired_entries()
 
-    rk_str = str(rating_key or '').strip()
+    rk_candidates = {
+        str(k).strip() for k in (rating_key, parent_rating_key, grandparent_rating_key) if k
+    }
     key_str = str(key or '').strip()
     title_str = str(title or '').strip().lower()
     ip_str = (player_ip or '').strip()
@@ -58,16 +62,19 @@ def find_matched_customer(
     if norm_ip in ('::1', 'localhost'):
         norm_ip = '127.0.0.1'
 
-    if rk_str:
+    # 1. Búsqueda por rating_key / parent / grandparent
+    if rk_candidates:
         for entry in _recent_streams:
-            if rk_str in entry['rating_keys']:
+            if any(cand in entry['rating_keys'] for cand in rk_candidates):
                 return entry
 
+    # 2. Búsqueda por key (path o identificador de plex)
     if key_str:
         for entry in _recent_streams:
             if key_str in entry['keys']:
                 return entry
 
+    # 3. Búsqueda por título idéntico y misma IP / red
     if title_str:
         for entry in _recent_streams:
             if title_str in entry['titles']:
@@ -77,6 +84,7 @@ def find_matched_customer(
                 if norm_ip and (norm_ip == entry_ip or norm_ip == '127.0.0.1'):
                     return entry
 
+    # 4. Si hay coincidencia por título reciente en los últimos 30 minutos
     if title_str:
         thirty_min_ago = time.time() - 1800
         for entry in _recent_streams:

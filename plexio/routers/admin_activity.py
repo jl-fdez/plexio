@@ -129,14 +129,15 @@ async def get_live_sessions(
         plex_user_title = str(user_info.get('title', '') or '').strip()
 
         rating_key = str(s.get('ratingKey', '') or '')
+        parent_rating_key = str(s.get('parentRatingKey', '') or '')
+        grandparent_rating_key = str(s.get('grandparentRatingKey', '') or '')
         item_key = str(s.get('key', '') or '')
         content_title = str(s.get('title', '') or '')
 
         matched_customer = None
         matched_device_label = None
-        is_identified = False
 
-        # Estrategia 1: Identificación precisa por machineIdentifier inyectado en Stremio
+        # Estrategia 1: Identificación precisa por machineIdentifier inyectado en Stremio por este API
         # Formato: stremio-c<customer_id>-<token_prefix>
         if 'stremio-c' in player_machine_id:
             try:
@@ -145,14 +146,15 @@ async def get_live_sessions(
                 if cid_str.isdigit() and int(cid_str) in cust_by_id:
                     matched_customer = cust_by_id[int(cid_str)]
                     matched_device_label = player_title or player_device_str or 'Stremio'
-                    is_identified = True
             except Exception:
                 pass
 
-        # Estrategia 2: Identificación por session_tracker (reproducciones solicitadas recientemente)
+        # Estrategia 2: Identificación por session_tracker (solicitudes de stream despachadas por este API)
         if not matched_customer:
             tracked = find_matched_customer(
                 rating_key=rating_key,
+                parent_rating_key=parent_rating_key,
+                grandparent_rating_key=grandparent_rating_key,
                 key=item_key,
                 title=content_title,
                 player_ip=player_raw_ip,
@@ -161,15 +163,13 @@ async def get_live_sessions(
             if tracked and tracked.get('customer_id') in cust_by_id:
                 matched_customer = cust_by_id[tracked['customer_id']]
                 matched_device_label = tracked.get('device_name') or player_title or 'Stremio'
-                is_identified = True
 
-        # Estrategia 3: Identificación por IP normalizada en base de datos de dispositivos
+        # Estrategia 3: Identificación por IP normalizada en base de datos de dispositivos de este API
         if not matched_customer and norm_ip:
             matched_dev = ip_to_device.get(norm_ip)
             if matched_dev and matched_dev.customer:
                 matched_customer = matched_dev.customer
                 matched_device_label = matched_dev.device_name or player_title or 'Stremio'
-                is_identified = True
 
         # Estrategia 4: Identificación por coincidencia de nombre de cliente en título de reproductor o usuario
         if not matched_customer:
@@ -179,21 +179,18 @@ async def get_live_sessions(
                 if any(c_name_lower in cand for cand in candidates if cand):
                     matched_customer = c
                     matched_device_label = player_title or player_device_str or 'Stremio'
-                    is_identified = True
                     break
 
-        # Asignar datos de cliente (o modo no identificado para NUNCA ocultar sesiones activas)
-        if matched_customer:
-            customer_name = matched_customer.name
-            customer_id = matched_customer.id
-            customer_token = matched_customer.uuid_token
-            device_label = matched_device_label or player_device_str or 'Dispositivo Stremio'
-        else:
-            is_identified = False
-            customer_name = player_title or plex_user_title or 'Cliente Stremio / En Red'
-            customer_id = None
-            customer_token = None
-            device_label = player_device_str or player_product_str or 'Reproductor en Vivo'
+        # FILTRADO EXCLUSIVO: Solo mostrar lo que pasa por este API
+        # Si la reproducción no pertenece a un cliente gestionado en este sistema, se ignora
+        if not matched_customer:
+            continue
+
+        customer_name = matched_customer.name
+        customer_id = matched_customer.id
+        customer_token = matched_customer.uuid_token
+        device_label = matched_device_label or player_device_str or 'Dispositivo Stremio'
+        is_identified = True
 
         # Formatear título del contenido
         media_type = s.get('type', 'video')

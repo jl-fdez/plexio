@@ -319,20 +319,11 @@ export const AdminLiveActivityPage: FC = () => {
                           {session.subtitle}
                         </p>
 
-                        {/* Cliente Identificado / Reproductor */}
+                        {/* Cliente Identificado */}
                         <div className="mt-3 flex flex-wrap items-center gap-2">
-                          <div
-                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium ${
-                              session.is_identified
-                                ? 'bg-indigo-500/10 border border-indigo-500/20 text-indigo-300'
-                                : 'bg-amber-500/10 border border-amber-500/20 text-amber-300'
-                            }`}
-                          >
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-medium">
                             <User className="w-3.5 h-3.5" />
                             <span className="truncate max-w-[140px]">{session.customer_name}</span>
-                            {!session.is_identified && (
-                              <span className="text-[10px] opacity-75 font-normal ml-0.5">(En red)</span>
-                            )}
                           </div>
 
                           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-400 text-xs">

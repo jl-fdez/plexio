@@ -481,9 +481,23 @@ async def get_customer_stream(
         # Registrar actividad en session_tracker para emparejamiento inteligente de sesiones en vivo
         try:
             client_ip = get_client_ip(request)
-            rk_list = [str(getattr(m, 'rating_key', '')) for m in media if getattr(m, 'rating_key', None)]
-            k_list = [str(getattr(m, 'key', '')) for m in media if getattr(m, 'key', None)]
-            t_list = [str(getattr(m, 'title', '')) for m in media if getattr(m, 'title', None)]
+            rk_list = []
+            k_list = []
+            t_list = []
+            for m in media:
+                for attr in ('rating_key', 'parent_rating_key', 'grandparent_rating_key'):
+                    val = getattr(m, attr, None)
+                    if val:
+                        rk_list.append(str(val))
+                for attr in ('key', 'parent_key', 'grandparent_key'):
+                    val = getattr(m, attr, None)
+                    if val:
+                        k_list.append(str(val))
+                for attr in ('title', 'parent_title', 'grandparent_title'):
+                    val = getattr(m, attr, None)
+                    if val:
+                        t_list.append(str(val))
+
             record_stream_activity(
                 customer_id=customer.id,
                 customer_name=customer.name,
