@@ -104,7 +104,7 @@ async def check_and_register_device(
         CustomerDevice.device_fingerprint == fingerprint,
     )
     result = await db.execute(stmt)
-    existing_device = result.scalar_one_or_none()
+    existing_device = result.scalars().first()
 
     # 2. Si no hay huella exacta pero coincide la misma IP y la misma familia de plataforma
     # (ej: Stremio UI y su reproductor integrado ExoPlayer/MPV en la misma máquina o TV)
@@ -127,6 +127,10 @@ async def check_and_register_device(
         existing_device.last_active = datetime.utcnow()
         if ip and ip != '0.0.0.0':
             existing_device.ip_address = ip
+        try:
+            await db.flush()
+        except Exception:
+            pass
         return True, existing_device.device_name
 
     # 3. Si es un dispositivo nuevo, contar cuántos tiene actualmente
@@ -155,7 +159,11 @@ async def check_and_register_device(
         user_agent=ua[:500] if ua else None,
         last_active=datetime.utcnow(),
     )
-    db.add(new_device)
-    await db.flush()
+    try:
+        db.add(new_device)
+        await db.flush()
+    except Exception as add_err:
+        import logging
+        logging.getLogger(__name__).warning('Error al persistir nuevo dispositivo: %s', add_err)
 
     return True, device_name

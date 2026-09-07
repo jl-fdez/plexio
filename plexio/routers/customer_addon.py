@@ -584,12 +584,20 @@ async def play_customer_media(
             detail='Acceso denegado o suscripción vencida',
         )
 
-    device_allowed, device_info = await check_and_register_device(customer, request, db)
-    if not device_allowed:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail='Límite de dispositivos excedido',
-        )
+    device_info = 'Dispositivo Stremio'
+    try:
+        device_allowed, check_info = await check_and_register_device(customer, request, db)
+        if not device_allowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=check_info or 'Límite de dispositivos excedido',
+            )
+        if check_info:
+            device_info = check_info
+    except HTTPException:
+        raise
+    except Exception as dev_err:
+        logger.warning('Aviso: error no crítico verificando dispositivo en /play/%s: %s', rating_key, dev_err)
 
     config = build_addon_configuration(plex_config)
     client_id = f'stremio-c{customer.id}-{customer.uuid_token[:8]}'
@@ -623,5 +631,14 @@ async def play_customer_media(
         'X-Plex-Platform': 'Stremio',
         'X-Plex-Username': customer.name,
     }
-    direct_url = str(config.streaming_url / part_key.lstrip('/') % stream_params)
-    return RedirectResponse(url=direct_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    try:
+        direct_url = str(config.streaming_url / part_key.lstrip('/') % stream_params)
+    except Exception as url_err:
+        logger.error('Error formateando URL de stream en /play/%s: %s', rating_key, url_err)
+        direct_url = str(config.streaming_url / part_key.lstrip('/'))
+
+    return RedirectResponse(
+        url=direct_url,
+        status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+        headers={'Access-Control-Allow-Origin': '*'},
+    )

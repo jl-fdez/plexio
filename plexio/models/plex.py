@@ -1,4 +1,5 @@
 import os
+import uuid
 from datetime import datetime
 from enum import Enum
 
@@ -333,7 +334,7 @@ class PlexMediaMeta(BaseModel):
                 self_key = self.key.lstrip('/')
                 cid = getattr(customer, 'id', '0') if customer else '0'
                 rk = getattr(self, 'rating_key', '0') or '0'
-                session_id = f'stremio-c{cid}-{rk}-{i}'
+                session_id = f'stremio-c{cid}-{rk}-{i}-{uuid.uuid4().hex[:8]}'
                 transcode_params = {
                     'path': f'/{self_key}',
                     'mediaIndex': i,
@@ -349,6 +350,7 @@ class PlexMediaMeta(BaseModel):
                     'session': session_id,
                     'subtitles': 'burn',
                     **base_plex_params,
+                    'X-Plex-Platform': 'Chrome',
                 }
                 transcode_url = (
                     configuration.streaming_url
