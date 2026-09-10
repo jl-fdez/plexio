@@ -1,4 +1,6 @@
+import logging
 from collections.abc import AsyncGenerator
+from sqlalchemy import event, inspect
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -8,18 +10,32 @@ from sqlalchemy.orm import declarative_base
 
 from plexio.settings import settings
 
+logger = logging.getLogger(__name__)
+
 Base = declarative_base()
 
 # Manejar SQLite y otros motores async
 engine_kwargs = {}
 if settings.database_url.startswith('sqlite'):
-    engine_kwargs['connect_args'] = {'check_same_thread': False}
+    engine_kwargs['connect_args'] = {
+        'check_same_thread': False,
+        'timeout': 30,
+    }
 
 engine = create_async_engine(
     settings.database_url,
     echo=False,
     **engine_kwargs,
 )
+
+if settings.database_url.startswith('sqlite'):
+    @event.listens_for(engine.sync_engine, 'connect')
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute('PRAGMA journal_mode=WAL;')
+        cursor.execute('PRAGMA synchronous=NORMAL;')
+        cursor.execute('PRAGMA busy_timeout=30000;')
+        cursor.close()
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,
@@ -34,19 +50,21 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             yield session
             await session.commit()
         except Exception:
-            await session.rollback()
+            try:
+                await session.rollback()
+            except Exception:
+                pass
             raise
         finally:
             await session.close()
 
 
-import logging
-from sqlalchemy import inspect
-
-logger = logging.getLogger(__name__)
-
-
 def _run_migrations(sync_conn):
+    if settings.database_url.startswith('sqlite'):
+        sync_conn.exec_driver_sql('PRAGMA journal_mode=WAL;')
+        sync_conn.exec_driver_sql('PRAGMA synchronous=NORMAL;')
+        sync_conn.exec_driver_sql('PRAGMA busy_timeout=30000;')
+
     Base.metadata.create_all(sync_conn)
 
     # Comprobar columnas faltantes en tablas existentes (SQLite)

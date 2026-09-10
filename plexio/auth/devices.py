@@ -1,10 +1,14 @@
 import hashlib
+import logging
+import time
 from datetime import datetime
 from fastapi import Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from plexio.db.models import Customer, CustomerDevice
+
+logger = logging.getLogger(__name__)
 
 
 def get_client_ip(request: Request) -> str:
@@ -83,6 +87,9 @@ def generate_fingerprint(customer_id: int, user_agent: str) -> str:
     return hashlib.sha256(raw).hexdigest()[:32]
 
 
+_last_device_update: dict[int, float] = {}
+
+
 async def check_and_register_device(
     customer: Customer,
     request: Request,
@@ -123,14 +130,34 @@ async def check_and_register_device(
                 break
 
     if existing_device:
-        # Dispositivo ya conocido: actualizar última actividad e IP
-        existing_device.last_active = datetime.utcnow()
-        if ip and ip != '0.0.0.0':
+        # Throttling en memoria: si ya se actualizó en los últimos 60s, omitir por completo
+        # la escritura en DB para evitar contención de bloqueos con ráfagas concurrentes (/catalog, /meta, /stream)
+        now_ts = time.time()
+        if existing_device.id and (now_ts - _last_device_update.get(existing_device.id, 0)) < 60:
+            return True, existing_device.device_name
+
+        # Dispositivo ya conocido: actualizar última actividad e IP solo si es necesario (throttling 60s)
+        # Esto previene ráfagas de escrituras concurrentes que bloquean SQLite (/catalog, /meta, /stream simultáneos)
+        now = datetime.utcnow()
+        needs_update = False
+        if not existing_device.last_active or (now - existing_device.last_active).total_seconds() > 60:
+            existing_device.last_active = now
+            needs_update = True
+        if ip and ip != '0.0.0.0' and existing_device.ip_address != ip:
             existing_device.ip_address = ip
-        try:
-            await db.flush()
-        except Exception:
-            pass
+            needs_update = True
+
+        if needs_update:
+            if existing_device.id:
+                _last_device_update[existing_device.id] = now_ts
+            try:
+                await db.flush()
+            except Exception as flush_err:
+                try:
+                    await db.rollback()
+                except Exception:
+                    pass
+                logger.warning('Aviso: no se pudo actualizar last_active del dispositivo %s: %s', existing_device.id, flush_err)
         return True, existing_device.device_name
 
     # 3. Si es un dispositivo nuevo, contar cuántos tiene actualmente
@@ -162,8 +189,13 @@ async def check_and_register_device(
     try:
         db.add(new_device)
         await db.flush()
+        if new_device.id:
+            _last_device_update[new_device.id] = time.time()
     except Exception as add_err:
-        import logging
-        logging.getLogger(__name__).warning('Error al persistir nuevo dispositivo: %s', add_err)
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        logger.warning('Error al persistir nuevo dispositivo: %s', add_err)
 
     return True, device_name

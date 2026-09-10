@@ -1,4 +1,5 @@
 from http import HTTPStatus
+import logging
 
 from aiohttp import ClientConnectorError, ClientSession
 from yarl import URL
@@ -10,6 +11,8 @@ from plexio.models.plex import (
 )
 from plexio.plex.utils import get_json
 from plexio.settings import settings
+
+logger = logging.getLogger(__name__)
 
 SORT_OPTIONS = {
     'Date Added (desc)': 'addedAt:desc',
