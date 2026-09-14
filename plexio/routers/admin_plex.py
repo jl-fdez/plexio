@@ -27,6 +27,7 @@ class PlexConfigPayload(BaseModel):
     transcode_down: bool = False
     transcode_qualities: list[str] = []
     include_plex_tv: bool = False
+    stream_mode: str = 'direct'  # 'direct' o 'hls'
 
 
 class PlexConfigResponse(BaseModel):
@@ -39,6 +40,7 @@ class PlexConfigResponse(BaseModel):
     transcode_down: bool
     transcode_qualities: list[str]
     include_plex_tv: bool
+    stream_mode: str = 'direct'
     updated_at: datetime
 
 
@@ -66,6 +68,7 @@ async def get_plex_config(
             'transcode_down': config.transcode_down,
             'transcode_qualities': json.loads(config.transcode_qualities_json or '[]'),
             'include_plex_tv': config.include_plex_tv,
+            'stream_mode': getattr(config, 'stream_mode', 'direct') or 'direct',
             'updated_at': config.updated_at,
         },
     }
@@ -99,6 +102,7 @@ async def save_plex_config(
         config.transcode_down = payload.transcode_down
         config.transcode_qualities_json = qualities_str
         config.include_plex_tv = payload.include_plex_tv
+        config.stream_mode = payload.stream_mode
         config.updated_at = datetime.utcnow()
     else:
         config = PlexServerConfig(
@@ -111,6 +115,7 @@ async def save_plex_config(
             transcode_down=payload.transcode_down,
             transcode_qualities_json=qualities_str,
             include_plex_tv=payload.include_plex_tv,
+            stream_mode=payload.stream_mode,
         )
         db.add(config)
 

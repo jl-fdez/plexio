@@ -13,6 +13,7 @@ export interface SavedPlexConfig {
   transcode_down: boolean;
   transcode_qualities: string[];
   include_plex_tv: boolean;
+  stream_mode?: string;
   updated_at: string;
 }
 
@@ -26,6 +27,7 @@ export interface PlexConfigPayload {
   transcode_down: boolean;
   transcode_qualities: string[];
   include_plex_tv: boolean;
+  stream_mode: string;
 }
 
 export const getSavedPlexConfig = async (): Promise<{

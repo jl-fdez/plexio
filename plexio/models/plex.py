@@ -306,8 +306,13 @@ class PlexMediaMeta(BaseModel):
 
             binge_group = f"plex-{media.get('videoResolution', 'direct')}"
 
-            # Construir URL del stream: Si hay api_base_url y cliente, pasar por el endpoint de reproducción
-            # para activar automáticamente el estado en el Dashboard de Plex (Now Playing)
+            # 1. Construir Stream Direct Play
+            line3_direct = '❤️ Direct Play • PX Central'
+            desc_direct_lines = [line1]
+            if line2:
+                desc_direct_lines.append(line2)
+            desc_direct_lines.append(line3_direct)
+
             effective_rk = str(self.rating_key or '')
             if api_base_url and customer and effective_rk:
                 c_token = getattr(customer, 'uuid_token', '')
@@ -320,16 +325,16 @@ class PlexMediaMeta(BaseModel):
                     % base_plex_params,
                 )
 
-            streams.append(
-                StremioStream(
-                    name=stream_name,
-                    description=description,
-                    url=direct_stream_url,
-                    subtitles=external_subtitles,
-                    behaviorHints={'bingeGroup': binge_group},
-                ),
+            direct_stream_obj = StremioStream(
+                name=stream_name,
+                description='\n'.join(desc_direct_lines),
+                url=direct_stream_url,
+                subtitles=external_subtitles,
+                behaviorHints={'bingeGroup': f'{binge_group}-direct'},
             )
 
+            # 2. Construir Stream Modo Compatible (HLS / Remux al vuelo sin pérdida)
+            hls_stream_obj = None
             if self.key:
                 self_key = self.key.lstrip('/')
                 cid = getattr(customer, 'id', '0') if customer else '0'
@@ -357,21 +362,36 @@ class PlexMediaMeta(BaseModel):
                     / 'video/:/transcode/universal/start.m3u8'
                     % transcode_params
                 )
-                if configuration.include_transcode_original:
-                    line3_trans_orig = '❤️ Transcode Original • PX Central'
-                    desc_orig_lines = [line1]
-                    if line2:
-                        desc_orig_lines.append(line2)
-                    desc_orig_lines.append(line3_trans_orig)
-                    streams.append(
-                        StremioStream(
-                            name=stream_name,
-                            description='\n'.join(desc_orig_lines),
-                            url=str(transcode_url % {'videoQuality': 100}),
-                            subtitles=external_subtitles,
-                            behaviorHints={'bingeGroup': f'{binge_group}-transcode-original'},
-                        ),
-                    )
+
+                if api_base_url and customer and effective_rk:
+                    c_token = getattr(customer, 'uuid_token', '')
+                    quoted_part = urllib.parse.quote(part_key, safe='')
+                    quoted_key = urllib.parse.quote(self_key, safe='')
+                    hls_stream_url = f"{api_base_url.rstrip('/')}/u/{c_token}/play/{effective_rk}/stream.m3u8?part_key={quoted_part}&media_key={quoted_key}&media_index={i}"
+                else:
+                    hls_stream_url = str(transcode_url % {'videoQuality': 100})
+
+                line3_hls = '❤️ Modo Compatible (HLS) • Anti-Error TV • PX Central'
+                line2_hls = f'{line2}• Remux HLS (0% pérdida)' if line2 else '📦 Remux HLS (0% pérdida)'
+                desc_hls_lines = [line1, line2_hls, line3_hls]
+
+                hls_stream_obj = StremioStream(
+                    name=f"{stream_name} [🛡️ Compatible]",
+                    description='\n'.join(desc_hls_lines),
+                    url=hls_stream_url,
+                    subtitles=external_subtitles,
+                    behaviorHints={'bingeGroup': f'{binge_group}-compatible-hls'},
+                )
+
+            # Priorización según stream_mode ('hls' recomendado para TVs vs 'direct')
+            stream_mode = getattr(configuration, 'stream_mode', 'direct') or 'direct'
+            if stream_mode == 'hls' and hls_stream_obj:
+                streams.append(hls_stream_obj)
+                streams.append(direct_stream_obj)
+            else:
+                streams.append(direct_stream_obj)
+                if hls_stream_obj:
+                    streams.append(hls_stream_obj)
 
                 if configuration.include_transcode_down:
                     for quality in configuration.transcode_down_qualities:

@@ -1,5 +1,6 @@
 import json
 import logging
+import uuid
 from datetime import datetime
 from itertools import chain
 from typing import Annotated
@@ -144,6 +145,7 @@ def build_addon_configuration(plex_config: PlexServerConfig | None) -> AddonConf
         include_transcode_down=bool(plex_config.transcode_down),
         transcode_down_qualities=qualities,
         include_plex_tv=bool(plex_config.include_plex_tv),
+        stream_mode=getattr(plex_config, 'stream_mode', 'direct') or 'direct',
     )
 
 
@@ -536,6 +538,115 @@ async def get_customer_stream(
     except Exception as exc:
         logger.exception('Error en get_customer_stream: %s', exc)
         return StremioStreamsResponse(streams=[])
+
+
+@router.api_route('/play/{rating_key}/stream.m3u8', methods=['GET', 'HEAD'])
+async def play_customer_hls_stream(
+    customer_token: str,
+    rating_key: str,
+    request: Request,
+    http: Annotated[ClientSession, Depends(get_http_client)],
+    part_key: str = '',
+    media_key: str = '',
+    media_index: int = 0,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Endpoint intermedio para streams HLS / Direct Stream (soporta GET y HEAD):
+    1. Valida suscripción y cuenta de cliente.
+    2. Comprueba y registra el dispositivo (límite concurrente).
+    3. Notifica y mantiene viva la sesión en Plex (/:/timeline) para Now Playing en Plex Dashboard.
+    4. Redirige (HTTP 307) a Plex Universal Transcoder en modo Direct Stream (HLS),
+       erradicando cualquier error de contenedor MKV en Android TV / ExoPlayer.
+    """
+    customer, plex_config, is_valid = await get_valid_customer_and_config(customer_token, db)
+    if not is_valid or not plex_config:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail='Acceso denegado o suscripción vencida',
+        )
+
+    device_info = 'Dispositivo Stremio'
+    try:
+        device_allowed, check_info = await check_and_register_device(customer, request, db)
+        if not device_allowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=check_info or 'Límite de dispositivos excedido',
+            )
+        if check_info:
+            device_info = check_info
+    except HTTPException:
+        raise
+    except Exception as dev_err:
+        logger.warning('Aviso: error no crítico verificando dispositivo en /play/%s/stream.m3u8: %s', rating_key, dev_err)
+
+    config = build_addon_configuration(plex_config)
+    client_id = f'stremio-c{customer.id}-{customer.uuid_token[:8]}'
+    dev_label = f'{customer.name} ({device_info})'
+
+    # Iniciar heartbeat en segundo plano hacia Plex (Now Playing)
+    if config.discovery_url and config.access_token:
+        try:
+            start_plex_heartbeat(
+                client=http,
+                discovery_url=config.discovery_url,
+                token=config.access_token,
+                customer_id=customer.id,
+                customer_name=customer.name,
+                customer_token=customer.uuid_token,
+                device_name=dev_label,
+                rating_key=rating_key,
+                duration_ms=0,
+                client_id=client_id,
+            )
+        except Exception as rep_err:
+            logger.error('Error iniciando heartbeat en /play/%s/stream.m3u8: %s', rating_key, rep_err)
+
+    # Construir parámetros de Transcoder Universal HLS (Direct Stream / Remux)
+    session_id = f'stremio-c{customer.id}-{rating_key}-{media_index}-{uuid.uuid4().hex[:8]}'
+    target_path = f"/{media_key.lstrip('/')}" if media_key else f"/library/metadata/{rating_key}"
+
+    transcode_params = {
+        'path': target_path,
+        'mediaIndex': media_index,
+        'partIndex': 0,
+        'protocol': 'hls',
+        'fastSeek': 1,
+        'copyts': 1,
+        'autoAdjustQuality': 0,
+        'directPlay': 0,
+        'directStream': 1,
+        'directStreamAudio': 1,
+        'videoQuality': 100,
+        'location': 'wan',
+        'session': session_id,
+        'subtitles': 'burn',
+        'X-Plex-Token': config.access_token,
+        'X-Plex-Client-Identifier': client_id,
+        'X-Plex-Product': 'Stremio',
+        'X-Plex-Device': device_info,
+        'X-Plex-Device-Name': dev_label,
+        'X-Plex-Platform': 'Chrome',
+        'X-Plex-Username': customer.name,
+    }
+
+    try:
+        hls_url = str(
+            config.streaming_url
+            / 'video/:/transcode/universal/start.m3u8'
+            % transcode_params
+        )
+    except Exception as url_err:
+        logger.error('Error formateando URL HLS en /play/%s/stream.m3u8: %s', rating_key, url_err)
+        # Fallback a URL directa si fallase la construcción
+        hls_url = str(config.streaming_url / part_key.lstrip('/') % {'X-Plex-Token': config.access_token})
+
+    return RedirectResponse(
+        url=hls_url,
+        status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+        headers={'Access-Control-Allow-Origin': '*'},
+    )
 
 
 @router.api_route('/play/{rating_key}', methods=['GET', 'HEAD'])

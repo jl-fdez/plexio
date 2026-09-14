@@ -90,6 +90,8 @@ def _run_migrations(sync_conn):
             sync_conn.exec_driver_sql('ALTER TABLE plex_server_configs ADD COLUMN transcode_original BOOLEAN DEFAULT 0')
         if 'transcode_down' not in existing_cols:
             sync_conn.exec_driver_sql('ALTER TABLE plex_server_configs ADD COLUMN transcode_down BOOLEAN DEFAULT 0')
+        if 'stream_mode' not in existing_cols:
+            sync_conn.exec_driver_sql("ALTER TABLE plex_server_configs ADD COLUMN stream_mode VARCHAR(50) DEFAULT 'direct'")
 
     if 'payment_records' in existing_tables:
         existing_cols = {col['name'] for col in inspector.get_columns('payment_records')}

@@ -38,6 +38,7 @@ class PlexServerConfig(Base):
     transcode_down = Column(Boolean, default=False)
     transcode_qualities_json = Column(Text, default='[]')
     include_plex_tv = Column(Boolean, default=False)
+    stream_mode = Column(String(50), default='direct')  # 'direct' o 'hls'
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 

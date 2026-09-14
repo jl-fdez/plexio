@@ -5,6 +5,7 @@ import {
   LogOut,
   Save,
   Server,
+  ShieldCheck,
   Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -49,6 +50,7 @@ export const AdminPlexSettingsPage: FC = () => {
   const [transcodeDown, setTranscodeDown] = useState(false);
   const [transcodeQualities, setTranscodeQualities] = useState<string[]>(['1080p', '720p']);
   const [includePlexTv, setIncludePlexTv] = useState(false);
+  const [streamMode, setStreamMode] = useState<'direct' | 'hls'>('hls');
 
   const [saving, setSaving] = useState(false);
   const [testingDiscovery, setTestingDiscovery] = useState(false);
@@ -94,6 +96,7 @@ export const AdminPlexSettingsPage: FC = () => {
         setTranscodeDown(res.config.transcode_down);
         setTranscodeQualities(res.config.transcode_qualities || ['1080p', '720p']);
         setIncludePlexTv(res.config.include_plex_tv);
+        setStreamMode((res.config.stream_mode as 'direct' | 'hls') || 'direct');
       }
     } catch (e) {
       console.error('Error loading saved config:', e);
@@ -242,6 +245,7 @@ export const AdminPlexSettingsPage: FC = () => {
         transcode_down: transcodeDown,
         transcode_qualities: transcodeQualities,
         include_plex_tv: includePlexTv,
+        stream_mode: streamMode,
       });
 
       if (res.warning) {
@@ -640,10 +644,80 @@ export const AdminPlexSettingsPage: FC = () => {
                   )}
                 </div>
 
+                {/* Modo de Stream Preferido (Compatibilidad Stremio / TVs) */}
+                <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl space-y-3">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      Modo de Reproducción Preferido (Stremio / TVs)
+                    </label>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    Define qué flujo se envía como primera opción por defecto en Stremio.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                    <label
+                      className={`flex flex-col p-3 rounded-xl border cursor-pointer transition ${
+                        streamMode === 'hls'
+                          ? 'bg-emerald-600/15 border-emerald-500/50 text-white'
+                          : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-semibold flex items-center gap-1.5 text-emerald-400">
+                          🛡️ Modo Compatible (HLS)
+                        </span>
+                        <input
+                          type="radio"
+                          name="streamMode"
+                          value="hls"
+                          checked={streamMode === 'hls'}
+                          onChange={() => setStreamMode('hls')}
+                          className="text-emerald-500 focus:ring-emerald-400"
+                        />
+                      </div>
+                      <span className="text-xs text-slate-300">
+                        Prioridad #1 al stream HLS remuxeado al vuelo por Plex (0% pérdida).
+                      </span>
+                      <span className="text-[11px] text-emerald-300/90 mt-1 font-medium">
+                        ✓ Recomendado: Erradica el error de contenedor malformado en Android TV / Fire TV.
+                      </span>
+                    </label>
+
+                    <label
+                      className={`flex flex-col p-3 rounded-xl border cursor-pointer transition ${
+                        streamMode === 'direct'
+                          ? 'bg-indigo-600/15 border-indigo-500/50 text-white'
+                          : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-semibold flex items-center gap-1.5 text-indigo-400">
+                          ⚡ Direct Play primero
+                        </span>
+                        <input
+                          type="radio"
+                          name="streamMode"
+                          value="direct"
+                          checked={streamMode === 'direct'}
+                          onChange={() => setStreamMode('direct')}
+                          className="text-indigo-500 focus:ring-indigo-400"
+                        />
+                      </div>
+                      <span className="text-xs text-slate-300">
+                        Entrega primero el archivo sin procesar (Direct Play).
+                      </span>
+                      <span className="text-[11px] text-slate-400 mt-1">
+                        El stream [🛡️ Compatible] seguirá disponible como segunda opción de rescate.
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
                 {/* Opciones de Transcoding */}
                 <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl space-y-3">
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
-                    Opciones de Reproducción y Transcodificación
+                    Opciones Adicionales de Transcodificación
                   </label>
 
                   <label className="flex items-center justify-between py-2 border-b border-slate-800/80 cursor-pointer">
