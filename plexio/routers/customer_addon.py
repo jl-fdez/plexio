@@ -621,7 +621,7 @@ async def play_customer_hls_stream(
         'videoQuality': 100,
         'location': 'wan',
         'session': session_id,
-        'subtitles': 'burn',
+        'subtitles': 'none',
         'X-Plex-Token': config.access_token,
         'X-Plex-Client-Identifier': client_id,
         'X-Plex-Product': 'Stremio',

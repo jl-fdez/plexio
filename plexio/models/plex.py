@@ -263,10 +263,16 @@ class PlexMediaMeta(BaseModel):
                         u_sub_langs.append(tag)
                     if 'key' in part_stream and part_stream['key']:
                         sub_key = part_stream['key'].lstrip('/')
+                        sub_lang = (
+                            part_stream.get('languageCode')
+                            or part_stream.get('languageTag')
+                            or part_stream.get('displayTitle')
+                            or 'Subtítulo'
+                        )
                         external_subtitles.append(
                             {
                                 'id': str(part_stream.get('id', '')),
-                                'lang': part_stream.get('displayTitle', 'Subtítulo'),
+                                'lang': sub_lang,
                                 'url': str(
                                     configuration.streaming_url
                                     / sub_key
@@ -353,7 +359,7 @@ class PlexMediaMeta(BaseModel):
                     'directStreamAudio': 1,
                     'location': 'wan',
                     'session': session_id,
-                    'subtitles': 'burn',
+                    'subtitles': 'none',
                     **base_plex_params,
                     'X-Plex-Platform': 'Chrome',
                 }
