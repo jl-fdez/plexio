@@ -105,7 +105,8 @@ async def _heartbeat_worker(
     device_name: str,
     started_at: float,
 ) -> None:
-    max_duration_ms = duration_ms if duration_ms > 0 else int(3.5 * 3600 * 1000)
+    max_duration_ms = duration_ms if duration_ms > 0 else int(2.5 * 3600 * 1000)
+    consecutive_errors = 0
     try:
         # Reporte inicial inmediato
         await report_plex_timeline(
@@ -121,7 +122,7 @@ async def _heartbeat_worker(
         )
 
         while True:
-            await asyncio.sleep(15)
+            await asyncio.sleep(30)
             now = time.time()
             elapsed_ms = int((now - started_at) * 1000)
             if elapsed_ms >= max_duration_ms:
@@ -138,7 +139,7 @@ async def _heartbeat_worker(
                 )
                 break
 
-            await report_plex_timeline(
+            ok = await report_plex_timeline(
                 client=client,
                 url=discovery_url,
                 token=token,
@@ -150,11 +151,38 @@ async def _heartbeat_worker(
                 device_name=device_name,
             )
 
+            if not ok:
+                consecutive_errors += 1
+                if consecutive_errors >= 3:
+                    logger.info(
+                        'Deteniendo heartbeat de Plex para %s tras 3 fallos consecutivos',
+                        session_id,
+                    )
+                    break
+            else:
+                consecutive_errors = 0
+
             if session_id in _active_playbacks:
                 _active_playbacks[session_id]['current_time_ms'] = elapsed_ms
                 _active_playbacks[session_id]['last_heartbeat'] = now
     except asyncio.CancelledError:
-        logger.debug('Heartbeat cancelado para %s', session_id)
+        logger.debug('Heartbeat cancelado para %s, notificando parada a Plex', session_id)
+        try:
+            now = time.time()
+            elapsed_ms = int((now - started_at) * 1000)
+            await report_plex_timeline(
+                client=client,
+                url=discovery_url,
+                token=token,
+                rating_key=rating_key,
+                state='stopped',
+                time_ms=elapsed_ms,
+                duration_ms=duration_ms,
+                client_id=client_id,
+                device_name=device_name,
+            )
+        except Exception as stop_err:
+            logger.debug('No se pudo reportar stopped al cancelar %s: %s', session_id, stop_err)
     except Exception as exc:
         logger.error('Error en heartbeat_worker para %s: %s', session_id, exc)
     finally:
@@ -174,14 +202,17 @@ def start_plex_heartbeat(
     duration_ms: int = 0,
     client_id: str = '',
 ) -> None:
-    """Inicia el heartbeat en segundo plano hacia Plex cada 15 segundos."""
+    """Inicia el heartbeat en segundo plano hacia Plex con ciclo de vida controlado."""
     if not rating_key or not token or not discovery_url:
         return
 
     session_id = f"{customer_id}_{rating_key}"
-    prev_task = _running_heartbeats.get(session_id)
-    if prev_task and not prev_task.done():
-        prev_task.cancel()
+
+    # Cancelar cualquier tarea previa del mismo cliente para no acumular ráfagas hacia Plex
+    user_prefix = f"{customer_id}_"
+    for sid, prev_task in list(_running_heartbeats.items()):
+        if sid.startswith(user_prefix) and not prev_task.done():
+            prev_task.cancel()
 
     effective_client_id = client_id or f'stremio-c{customer_id}'
     register_active_playback(

@@ -1,5 +1,7 @@
 import { FC, useEffect, useState } from 'react';
 import {
+  AlertTriangle,
+  Edit3,
   LogOut,
   Save,
   Server,
@@ -13,6 +15,7 @@ import {
   SavedPlexConfig,
   deletePlexServerConfig,
   getSavedPlexConfig,
+  isPlexRelayUrl,
   savePlexServerConfig,
   testPlexConnection,
 } from '@/services/AdminPlexService';
@@ -49,9 +52,26 @@ export const AdminPlexSettingsPage: FC = () => {
 
   const [saving, setSaving] = useState(false);
   const [testingDiscovery, setTestingDiscovery] = useState(false);
+  const [manualDiscovery, setManualDiscovery] = useState(false);
+  const [manualStreaming, setManualStreaming] = useState(false);
 
   const selectedServer = servers.find((s) => s.name === selectedServerName);
   const availableSections = usePMSSections(discoveryUrl, selectedServer?.accessToken || null);
+
+  const chooseBestConnection = (server: any) => {
+    if (!server?.connections || server.connections.length === 0) return '';
+    // Prioridad 1: Conexión remota directa (no relay, no local)
+    const directRemote = server.connections.find((c: any) => !c.local && !c.relay);
+    if (directRemote) return directRemote.uri;
+    // Prioridad 2: Conexión local directa
+    const localDirect = server.connections.find((c: any) => c.local && !c.relay);
+    if (localDirect) return localDirect.uri;
+    // Prioridad 3: Cualquier conexión que no sea Relay
+    const anyDirect = server.connections.find((c: any) => !c.relay);
+    if (anyDirect) return anyDirect.uri;
+    // En última instancia, la primera disponible
+    return server.connections[0]?.uri || '';
+  };
 
   // Cargar configuración guardada en DB
   const loadSavedConfig = async () => {
@@ -100,10 +120,10 @@ export const AdminPlexSettingsPage: FC = () => {
         if (serversData.length > 0 && !selectedServerName) {
           const first = serversData[0];
           setSelectedServerName(first.name);
-          const remoteConn = first.connections.find((c: any) => !c.local);
-          if (remoteConn) {
-            setDiscoveryUrl(remoteConn.uri);
-            setStreamingUrl(remoteConn.uri);
+          const bestUri = chooseBestConnection(first);
+          if (bestUri) {
+            setDiscoveryUrl(bestUri);
+            setStreamingUrl(bestUri);
           }
         }
       } catch (err) {
@@ -212,7 +232,7 @@ export const AdminPlexSettingsPage: FC = () => {
 
     setSaving(true);
     try {
-      await savePlexServerConfig({
+      const res = await savePlexServerConfig({
         server_name: selectedServer.name,
         access_token: selectedServer.accessToken,
         discovery_url: discoveryUrl,
@@ -224,11 +244,20 @@ export const AdminPlexSettingsPage: FC = () => {
         include_plex_tv: includePlexTv,
       });
 
-      toast({
-        title: '¡Configuración Guardada!',
-        description: 'Tu servidor Plex ahora es la fuente central para todos tus clientes.',
-        variant: 'success',
-      });
+      if (res.warning) {
+        toast({
+          title: '¡Guardado con Advertencia de Plex Relay!',
+          description: res.warning,
+          variant: 'destructive',
+          duration: 12000,
+        });
+      } else {
+        toast({
+          title: '¡Configuración Guardada!',
+          description: 'Tu servidor Plex ahora es la fuente central para todos tus clientes.',
+          variant: 'success',
+        });
+      }
       void loadSavedConfig();
     } catch (err: any) {
       toast({
@@ -263,14 +292,23 @@ export const AdminPlexSettingsPage: FC = () => {
   const testDiscovery = async () => {
     if (!selectedServer || !discoveryUrl) return;
     setTestingDiscovery(true);
-    const ok = await testPlexConnection(discoveryUrl, selectedServer.accessToken);
+    const res = await testPlexConnection(discoveryUrl, selectedServer.accessToken);
     setTestingDiscovery(false);
-    if (ok) {
-      toast({
-        title: '¡Conexión Exitosa!',
-        description: 'El backend pudo conectarse a tu Plex correctamente.',
-        variant: 'success',
-      });
+    if (res.success) {
+      if (res.is_relay) {
+        toast({
+          title: 'Conexión Exitosa pero vía Plex Relay ⚠️',
+          description: 'El backend conectó con éxito, pero la URL usa Plex Relay. Puede saturar el servidor y desconectar tu app oficial de Plex al reproducir.',
+          variant: 'destructive',
+          duration: 10000,
+        });
+      } else {
+        toast({
+          title: '¡Conexión Directa Exitosa! ✅',
+          description: 'El backend pudo conectarse directamente a tu Plex sin pasar por Plex Relay.',
+          variant: 'success',
+        });
+      }
     } else {
       toast({
         title: 'Fallo de Conexión',
@@ -423,10 +461,10 @@ export const AdminPlexSettingsPage: FC = () => {
                   setSelectedServerName(sName);
                   const found = servers.find((s) => s.name === sName);
                   if (found) {
-                    const remoteConn = found.connections.find((c: any) => !c.local);
-                    if (remoteConn) {
-                      setDiscoveryUrl(remoteConn.uri);
-                      setStreamingUrl(remoteConn.uri);
+                    const bestUri = chooseBestConnection(found);
+                    if (bestUri) {
+                      setDiscoveryUrl(bestUri);
+                      setStreamingUrl(bestUri);
                     }
                   }
                 }}
@@ -442,55 +480,111 @@ export const AdminPlexSettingsPage: FC = () => {
 
             {selectedServer && (
               <>
+                {/* Alerta de Plex Relay */}
+                {(isPlexRelayUrl(discoveryUrl) || isPlexRelayUrl(streamingUrl)) && (
+                  <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-1.5">
+                    <div className="font-semibold flex items-center gap-2 text-amber-400 text-sm">
+                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>⚠️ Advertencia de Plex Relay (Retransmisión Proxy)</span>
+                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed">
+                      Estás usando una URL de <strong>Plex Relay</strong>. Plex Relay limita el ancho de banda a 1-2 Mbps y <strong>solo permite un único stream a la vez</strong>. Cuando reproduzcas desde Stremio u otra app externa, el túnel se satura y tu servidor Plex aparecerá como <strong>desconectado</strong> en tu app oficial de Plex hasta que la reproducción termine.
+                    </p>
+                    <p className="text-xs text-amber-300/90 leading-relaxed">
+                      <strong>Recomendación:</strong> Abre el puerto 32400 en tu router con Port Forwarding o pulsa en <strong>«URL Manual»</strong> para escribir directamente tu IP pública o dominio (ej. <code>http://tu-ip:32400</code>).
+                    </p>
+                  </div>
+                )}
+
                 {/* Discovery URL */}
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                       URL de Descubrimiento (Discovery URL)
                     </label>
-                    <button
-                      type="button"
-                      onClick={testDiscovery}
-                      disabled={testingDiscovery}
-                      className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
-                    >
-                      {testingDiscovery ? 'Probando...' : 'Probar Conexión'}
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setManualDiscovery(!manualDiscovery)}
+                        className="text-xs text-slate-400 hover:text-white flex items-center gap-1"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        {manualDiscovery ? 'Elegir de lista' : 'URL Manual'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={testDiscovery}
+                        disabled={testingDiscovery}
+                        className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+                      >
+                        {testingDiscovery ? 'Probando...' : 'Probar Conexión'}
+                      </button>
+                    </div>
                   </div>
-                  <select
-                    value={discoveryUrl}
-                    onChange={(e) => setDiscoveryUrl(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                  >
-                    {selectedServer.connections
-                      .filter((c: any) => !c.local)
-                      .map((c: any, idx: number) => (
-                        <option key={idx} value={c.uri}>
-                          {c.address}:{c.port} {c.relay ? '(Relay)' : ''}
-                        </option>
-                      ))}
-                  </select>
+                  {manualDiscovery ? (
+                    <input
+                      type="text"
+                      value={discoveryUrl}
+                      onChange={(e) => setDiscoveryUrl(e.target.value)}
+                      placeholder="http://192.168.1.100:32400 o https://tu-dominio.com:32400"
+                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    />
+                  ) : (
+                    <select
+                      value={discoveryUrl}
+                      onChange={(e) => setDiscoveryUrl(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    >
+                      {selectedServer.connections
+                        .filter((c: any) => !c.local)
+                        .map((c: any, idx: number) => (
+                          <option key={idx} value={c.uri}>
+                            {c.address}:{c.port} {c.relay ? '⚠️ [Plex Relay]' : '✅ [Directa]'}
+                          </option>
+                        ))}
+                    </select>
+                  )}
                   <p className="text-[11px] text-slate-500 mt-1">
-                    La dirección que usará el backend para consultar metadatos y episodios.
+                    La dirección que usará el backend para consultar metadatos y bibliotecas.
                   </p>
                 </div>
 
                 {/* Streaming URL */}
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                    URL de Streaming
-                  </label>
-                  <select
-                    value={streamingUrl}
-                    onChange={(e) => setStreamingUrl(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                  >
-                    {selectedServer.connections.map((c: any, idx: number) => (
-                      <option key={idx} value={c.uri}>
-                        {c.address}:{c.port} {c.local ? '(Local)' : ''} {c.relay ? '(Relay)' : ''}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      URL de Streaming
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setManualStreaming(!manualStreaming)}
+                      className="text-xs text-slate-400 hover:text-white flex items-center gap-1"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      {manualStreaming ? 'Elegir de lista' : 'URL Manual'}
+                    </button>
+                  </div>
+                  {manualStreaming ? (
+                    <input
+                      type="text"
+                      value={streamingUrl}
+                      onChange={(e) => setStreamingUrl(e.target.value)}
+                      placeholder="http://tu-ip-publica:32400 o https://tu-dominio.com:32400"
+                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    />
+                  ) : (
+                    <select
+                      value={streamingUrl}
+                      onChange={(e) => setStreamingUrl(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    >
+                      {selectedServer.connections.map((c: any, idx: number) => (
+                        <option key={idx} value={c.uri}>
+                          {c.address}:{c.port} {c.local ? '(Local)' : ''} {c.relay ? '⚠️ [Plex Relay]' : '✅ [Directa]'}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   <p className="text-[11px] text-slate-500 mt-1">
                     La dirección que recibirán los clientes de Stremio para reproducir el vídeo.
                   </p>

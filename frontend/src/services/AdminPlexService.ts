@@ -38,9 +38,14 @@ export const getSavedPlexConfig = async (): Promise<{
   return res.data;
 };
 
+export const isPlexRelayUrl = (url: string): boolean => {
+  const low = (url || '').toLowerCase();
+  return low.includes('relay.plex.services') || low.includes('-relay.') || low.includes('.plex.services');
+};
+
 export const savePlexServerConfig = async (
   payload: PlexConfigPayload,
-): Promise<{ success: boolean; message: string }> => {
+): Promise<{ success: boolean; message: string; warning?: string }> => {
   const res = await axios.post(`${API_BASE}/config`, payload, {
     headers: getAuthHeaders(),
   });
@@ -60,14 +65,17 @@ export const deletePlexServerConfig = async (): Promise<{
 export const testPlexConnection = async (
   url: string,
   token: string,
-): Promise<boolean> => {
+): Promise<{ success: boolean; is_relay: boolean }> => {
   try {
     const res = await axios.get(`${API_BASE}/test-connection`, {
       params: { url, token },
       headers: getAuthHeaders(),
     });
-    return res.data.success;
+    return {
+      success: !!res.data.success,
+      is_relay: !!res.data.is_relay || isPlexRelayUrl(url),
+    };
   } catch {
-    return false;
+    return { success: false, is_relay: isPlexRelayUrl(url) };
   }
 };

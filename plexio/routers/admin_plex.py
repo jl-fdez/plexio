@@ -71,6 +71,11 @@ async def get_plex_config(
     }
 
 
+def is_relay_url(url: str) -> bool:
+    low = (url or '').lower()
+    return 'relay.plex.services' in low or '-relay.' in low or '.plex.services' in low
+
+
 @router.post('/config')
 async def save_plex_config(
     payload: PlexConfigPayload,
@@ -112,7 +117,20 @@ async def save_plex_config(
     await db.flush()
     await db.refresh(config)
 
-    return {'success': True, 'message': 'Configuración de Plex guardada correctamente.'}
+    warning = None
+    if is_relay_url(payload.streaming_url) or is_relay_url(payload.discovery_url):
+        warning = (
+            'Aviso importante: Has configurado una URL de Plex Relay. '
+            'Plex Relay solo admite un único stream a la vez y saturará el túnel, '
+            'haciendo que tu servidor aparezca desconectado en tu app oficial de Plex. '
+            'Se recomienda encarecidamente usar una conexión directa con puerto 32400.'
+        )
+
+    return {
+        'success': True,
+        'message': 'Configuración de Plex guardada correctamente.',
+        'warning': warning,
+    }
 
 
 @router.delete('/config')
@@ -140,4 +158,7 @@ async def test_admin_connection(
         url=URL(url),
         token=token,
     )
-    return {'success': success}
+    return {
+        'success': success,
+        'is_relay': is_relay_url(url),
+    }

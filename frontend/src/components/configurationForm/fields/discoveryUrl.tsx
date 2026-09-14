@@ -84,8 +84,8 @@ export const DiscoveryUrlField: FC<Props> = ({ form, server }) => {
                     .map((conn: any, index: number) => (
                       <SelectItem key={index} value={conn.uri}>
                         {conn.relay && (
-                          <Badge className="mr-1.5" variant="secondary">
-                            retransmisión
+                          <Badge className="mr-1.5 bg-amber-500/20 text-amber-400 border-amber-500/40" variant="secondary">
+                            ⚠️ retransmisión (Relay)
                           </Badge>
                         )}
                         {`${conn.address}:${conn.port}`}
@@ -107,6 +107,11 @@ export const DiscoveryUrlField: FC<Props> = ({ form, server }) => {
               )}
             </Button>
           </div>
+          {(discoveryUrl.includes('relay.plex.services') || discoveryUrl.includes('-relay.')) && (
+            <p className="text-xs font-medium text-amber-400 mt-2 bg-amber-500/10 p-2.5 rounded-md border border-amber-500/30 leading-relaxed">
+              ⚠️ <strong>Advertencia Plex Relay:</strong> Solo permite 1 stream y saturará tu servidor, haciendo que aparezca desconectado en tu app oficial de Plex. Usa una conexión directa con puerto 32400.
+            </p>
+          )}
           <FormDescription>
             Selecciona la URL pública o remota de tu servidor Plex.
           </FormDescription>

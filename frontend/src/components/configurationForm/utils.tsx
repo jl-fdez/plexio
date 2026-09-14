@@ -1,15 +1,17 @@
 export const parseUrlToIpPort = (url: string): string => {
-  const urlObj = new URL(url);
+  try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname;
+    const port = urlObj.port || (urlObj.protocol === 'https:' ? '443' : '80');
 
-  const hostname = urlObj.hostname;
-  const port = urlObj.port;
+    const ipMatch = hostname.match(/^(\d+-\d+-\d+-\d+)/);
+    if (ipMatch) {
+      const ip = ipMatch[1].replace(/-/g, '.');
+      return `${ip}:${port}`;
+    }
 
-  const ipMatch = hostname.match(/^(\d+-\d+-\d+-\d+)/);
-  if (!ipMatch) {
-    throw new Error('Invalid hostname format.');
+    return `${hostname}:${port}`;
+  } catch {
+    return url;
   }
-
-  const ip = ipMatch[1].replace(/-/g, '.');
-
-  return `${ip}:${port}`;
 };

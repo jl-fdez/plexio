@@ -522,30 +522,6 @@ async def get_customer_stream(
         proto = request.headers.get('x-forwarded-proto') or request.url.scheme
         api_base_url = f"{proto}://{host}" if host else str(request.base_url).rstrip('/')
 
-        # Iniciar heartbeat automático en segundo plano hacia Plex
-        if media and config.discovery_url and config.access_token:
-            first_m = media[0]
-            first_rk = str(getattr(first_m, 'rating_key', '') or '')
-            first_dur = int(getattr(first_m, 'duration', 0) or 0)
-            if first_rk:
-                client_id = f'stremio-c{customer.id}-{customer.uuid_token[:8]}'
-                dev_label = f'{customer.name} ({device_info})'
-                try:
-                    start_plex_heartbeat(
-                        client=http,
-                        discovery_url=config.discovery_url,
-                        token=config.access_token,
-                        customer_id=customer.id,
-                        customer_name=customer.name,
-                        customer_token=customer.uuid_token,
-                        device_name=dev_label,
-                        rating_key=first_rk,
-                        duration_ms=first_dur,
-                        client_id=client_id,
-                    )
-                except Exception as t_err:
-                    logger.debug('Aviso: error iniciando heartbeat de Plex: %s', t_err)
-
         return StremioStreamsResponse(
             streams=chain.from_iterable(
                 m.get_stremio_streams(
