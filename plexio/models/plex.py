@@ -241,6 +241,9 @@ class PlexMediaMeta(BaseModel):
                 media.get('width', 0),
             )
 
+            effective_rk = str(self.rating_key or '')
+            c_token = getattr(customer, 'uuid_token', '') if customer else ''
+
             u_audio_langs = []
             u_sub_langs = []
             external_subtitles = []
@@ -269,17 +272,22 @@ class PlexMediaMeta(BaseModel):
                             or part_stream.get('displayTitle')
                             or 'Subtítulo'
                         )
+                        # Blindaje ExoPlayer: usar endpoint proxy seguro para evitar ERROR_CODE_IO_BAD_HTTP_STATUS (404)
+                        if api_base_url and c_token and effective_rk:
+                            sub_url = f"{api_base_url.rstrip('/')}/u/{c_token}/sub/{effective_rk}/{sub_key}"
+                        else:
+                            sub_url = str(
+                                configuration.streaming_url
+                                / sub_key
+                                % {
+                                    'X-Plex-Token': configuration.access_token,
+                                }
+                            )
                         external_subtitles.append(
                             {
                                 'id': str(part_stream.get('id', '')),
                                 'lang': sub_lang,
-                                'url': str(
-                                    configuration.streaming_url
-                                    / sub_key
-                                    % {
-                                        'X-Plex-Token': configuration.access_token,
-                                    }
-                                ),
+                                'url': sub_url,
                             }
                         )
 
@@ -319,9 +327,7 @@ class PlexMediaMeta(BaseModel):
                 desc_direct_lines.append(line2)
             desc_direct_lines.append(line3_direct)
 
-            effective_rk = str(self.rating_key or '')
             if api_base_url and customer and effective_rk:
-                c_token = getattr(customer, 'uuid_token', '')
                 quoted_part = urllib.parse.quote(part_key, safe='')
                 direct_stream_url = f"{api_base_url.rstrip('/')}/u/{c_token}/play/{effective_rk}?part_key={quoted_part}"
             else:
@@ -345,7 +351,8 @@ class PlexMediaMeta(BaseModel):
                 self_key = self.key.lstrip('/')
                 cid = getattr(customer, 'id', '0') if customer else '0'
                 rk = getattr(self, 'rating_key', '0') or '0'
-                session_id = f'stremio-c{cid}-{rk}-{i}-{uuid.uuid4().hex[:8]}'
+                # Identificador de sesión determinista para evitar 404 en ExoPlayer al refrescar fragmentos
+                session_id = f'stremio-c{cid}-{rk}-{i}'
                 transcode_params = {
                     'path': f'/{self_key}',
                     'mediaIndex': i,

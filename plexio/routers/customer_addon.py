@@ -6,7 +6,7 @@ from itertools import chain
 from typing import Annotated
 from aiohttp import ClientSession
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from redis.asyncio.client import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,6 +44,7 @@ from plexio.plex.media_server_api import (
     get_section_media,
     stremio_to_plex_id,
 )
+from plexio.plex.utils import get_json
 
 router = APIRouter(prefix='/u/{customer_token}', tags=['Customer Stremio Addon'])
 
@@ -540,6 +541,48 @@ async def get_customer_stream(
         return StremioStreamsResponse(streams=[])
 
 
+@router.get('/sub/{rating_key}/{stream_key:path}')
+async def get_customer_subtitle(
+    customer_token: str,
+    rating_key: str,
+    stream_key: str,
+    request: Request,
+    http: Annotated[ClientSession, Depends(get_http_client)],
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Proxy seguro para subtítulos de Plex:
+    Si Plex responde 200, entrega el subtítulo.
+    Si Plex responde 404, 500 o error, entrega 200 OK con WebVTT vacío
+    para evitar que ExoPlayer en Android TV cancele la reproducción del video
+    con ERROR_CODE_IO_BAD_HTTP_STATUS (404).
+    """
+    empty_vtt = 'WEBVTT\n\n'
+    try:
+        customer, plex_config, is_valid = await get_valid_customer_and_config(customer_token, db)
+        if not is_valid or not plex_config:
+            return Response(content=empty_vtt, media_type='text/vtt', headers={'Access-Control-Allow-Origin': '*'})
+
+        config = build_addon_configuration(plex_config)
+        sub_url = config.streaming_url / stream_key.lstrip('/') % {'X-Plex-Token': config.access_token}
+
+        async with http.get(sub_url, timeout=10) as resp:
+            if resp.status == 200:
+                body = await resp.read()
+                content_type = resp.headers.get('Content-Type', 'text/vtt')
+                return Response(
+                    content=body,
+                    media_type=content_type,
+                    headers={'Access-Control-Allow-Origin': '*'},
+                )
+            else:
+                logger.warning('Subtítulo Plex retornó HTTP %s para %s, sirviendo WebVTT vacío para proteger ExoPlayer', resp.status, stream_key)
+                return Response(content=empty_vtt, media_type='text/vtt', headers={'Access-Control-Allow-Origin': '*'})
+    except Exception as exc:
+        logger.warning('Error obteniendo subtítulo Plex %s: %s, sirviendo WebVTT vacío', stream_key, exc)
+        return Response(content=empty_vtt, media_type='text/vtt', headers={'Access-Control-Allow-Origin': '*'})
+
+
 @router.api_route('/play/{rating_key}/stream.m3u8', methods=['GET', 'HEAD'])
 async def play_customer_hls_stream(
     customer_token: str,
@@ -603,8 +646,8 @@ async def play_customer_hls_stream(
         except Exception as rep_err:
             logger.error('Error iniciando heartbeat en /play/%s/stream.m3u8: %s', rating_key, rep_err)
 
-    # Construir parámetros de Transcoder Universal HLS (Direct Stream / Remux)
-    session_id = f'stremio-c{customer.id}-{rating_key}-{media_index}-{uuid.uuid4().hex[:8]}'
+    # Identificador de sesión determinista para evitar 404 en ExoPlayer al refrescar fragmentos .ts
+    session_id = f'stremio-c{customer.id}-{rating_key}-{media_index}'
     target_path = f"/{media_key.lstrip('/')}" if media_key else f"/library/metadata/{rating_key}"
 
     transcode_params = {
@@ -653,16 +696,17 @@ async def play_customer_hls_stream(
 async def play_customer_media(
     customer_token: str,
     rating_key: str,
-    part_key: str,
     request: Request,
     http: Annotated[ClientSession, Depends(get_http_client)],
+    part_key: str = '',
     db: AsyncSession = Depends(get_db),
 ):
     """
     Endpoint intermedio invocado directamente por el reproductor de Stremio (soporta GET y HEAD):
     1. Notifica y mantiene viva la sesión en Plex Media Server (/:/timeline) con heartbeat continuo.
     2. Registra la sesión en session_tracker.
-    3. Redirige (HTTP 307) a Stremio hacia la URL de descarga directa de Plex.
+    3. Resuelve part_key dinámicamente si falta o está desactualizado (ej: historial de Stremio).
+    4. Redirige (HTTP 307) a Stremio hacia la URL de descarga directa de Plex.
     """
     customer, plex_config, is_valid = await get_valid_customer_and_config(customer_token, db)
     if not is_valid or not plex_config:
@@ -689,6 +733,28 @@ async def play_customer_media(
     config = build_addon_configuration(plex_config)
     client_id = f'stremio-c{customer.id}-{customer.uuid_token[:8]}'
     dev_label = f'{customer.name} ({device_info})'
+
+    # Fallback dinámico si part_key viene vacío o desactualizado (ej: reanudación desde Continuar viendo)
+    if not part_key and config.discovery_url and config.access_token:
+        try:
+            meta_json = await get_json(
+                client=http,
+                url=config.discovery_url / 'library/metadata' / rating_key,
+                params={'X-Plex-Token': config.access_token, 'includeElements': 'Stream'},
+            )
+            metadata = meta_json.get('MediaContainer', {}).get('Metadata', []) if isinstance(meta_json, dict) else []
+            if metadata:
+                m_list = metadata[0].get('Media', [])
+                if m_list and isinstance(m_list[0], dict):
+                    parts = m_list[0].get('Part', [])
+                    if parts and isinstance(parts[0], dict):
+                        part_key = parts[0].get('key', '').lstrip('/')
+                        logger.info('part_key resuelto dinámicamente para %s: %s', rating_key, part_key)
+        except Exception as res_err:
+            logger.warning('No se pudo resolver part_key dinámicamente para %s: %s', rating_key, res_err)
+
+    if not part_key:
+        part_key = f'library/metadata/{rating_key}'
 
     # 1. Iniciar heartbeat en segundo plano hacia Plex (mantiene viva la sesión cada 15 segundos)
     if config.discovery_url and config.access_token:
