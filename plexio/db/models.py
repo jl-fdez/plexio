@@ -67,11 +67,36 @@ class Customer(Base):
     devices = relationship('CustomerDevice', back_populates='customer', cascade='all, delete-orphan')
 
 
+class Device(Base):
+    """
+    Representa un dispositivo físico real (Smart TV, PC, TV Box, Móvil)
+    identificado por su huella física de hardware y red, permitiendo
+    que múltiples usuarios compartan el mismo dispositivo a la vez.
+    """
+    __tablename__ = 'devices'
+
+    id = Column(Integer, primary_key=True, index=True)
+    device_fingerprint = Column(String(128), unique=True, index=True, nullable=False)
+    device_name = Column(String(255), default='Dispositivo Stremio')
+    ip_address = Column(String(100), nullable=True)
+    user_agent = Column(String(500), nullable=True)
+    last_active = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    customer_links = relationship('CustomerDevice', back_populates='device', cascade='all, delete-orphan')
+
+
 class CustomerDevice(Base):
+    """
+    Asociación entre un cliente (Customer) y un dispositivo físico (Device).
+    Permite que un cliente tenga varios dispositivos (hasta max_devices)
+    y que un dispositivo físico esté asociado a múltiples clientes simultáneamente.
+    """
     __tablename__ = 'customer_devices'
 
     id = Column(Integer, primary_key=True, index=True)
     customer_id = Column(Integer, ForeignKey('customers.id', ondelete='CASCADE'), nullable=False, index=True)
+    device_id = Column(Integer, ForeignKey('devices.id', ondelete='CASCADE'), nullable=True, index=True)
     device_fingerprint = Column(String(128), index=True, nullable=False)
     device_name = Column(String(255), default='Dispositivo Stremio')
     ip_address = Column(String(100), nullable=True)
@@ -80,6 +105,7 @@ class CustomerDevice(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     customer = relationship('Customer', back_populates='devices')
+    device = relationship('Device', back_populates='customer_links')
 
 
 class PaymentRecord(Base):

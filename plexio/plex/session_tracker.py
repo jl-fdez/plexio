@@ -5,7 +5,7 @@ from typing import Any
 from aiohttp import ClientSession
 from yarl import URL
 
-from plexio.plex.media_server_api import report_plex_timeline
+from plexio.plex.media_server_api import ping_plex_transcode, report_plex_timeline
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +64,7 @@ def register_active_playback(
     rating_key: str,
     duration_ms: int = 0,
     client_id: str = '',
+    transcode_session: str = '',
 ) -> None:
     """Registra o refresca una reproducción activa para mantener la presencia en Plex."""
     clean_expired_entries()
@@ -74,6 +75,8 @@ def register_active_playback(
         existing['last_heartbeat'] = now
         if duration_ms > 0:
             existing['duration_ms'] = duration_ms
+        if transcode_session:
+            existing['transcode_session'] = transcode_session
     else:
         _active_playbacks[session_id] = {
             'customer_id': customer_id,
@@ -86,6 +89,7 @@ def register_active_playback(
             'current_time_ms': 0,
             'started_at': now,
             'last_heartbeat': now,
+            'transcode_session': transcode_session,
         }
 
 
@@ -104,11 +108,13 @@ async def _heartbeat_worker(
     client_id: str,
     device_name: str,
     started_at: float,
+    streaming_url: URL | None = None,
+    transcode_session: str = '',
 ) -> None:
     max_duration_ms = duration_ms if duration_ms > 0 else int(2.5 * 3600 * 1000)
     consecutive_errors = 0
     try:
-        # Reporte inicial inmediato
+        # Reporte inicial inmediato a Plex
         await report_plex_timeline(
             client=client,
             url=discovery_url,
@@ -119,12 +125,26 @@ async def _heartbeat_worker(
             duration_ms=duration_ms,
             client_id=client_id,
             device_name=device_name,
+            transcode_session=transcode_session,
         )
 
+        # Ping inicial de transcode si es sesión HLS / universal transcode
+        if transcode_session and streaming_url:
+            await ping_plex_transcode(
+                client=client,
+                streaming_url=streaming_url,
+                token=token,
+                session_id=transcode_session,
+                client_id=client_id,
+            )
+
         while True:
-            await asyncio.sleep(30)
+            # Intervalo de 15 segundos para mantener activo el Transcode Reaper de Plex y Now Playing
+            await asyncio.sleep(15)
             now = time.time()
             elapsed_ms = int((now - started_at) * 1000)
+
+            # Comprobar si la sesión superó la duración máxima esperada
             if elapsed_ms >= max_duration_ms:
                 await report_plex_timeline(
                     client=client,
@@ -136,9 +156,21 @@ async def _heartbeat_worker(
                     duration_ms=duration_ms,
                     client_id=client_id,
                     device_name=device_name,
+                    transcode_session=transcode_session,
                 )
                 break
 
+            # Enviar ping de keep-alive a Plex Universal Transcoder
+            if transcode_session and streaming_url:
+                await ping_plex_transcode(
+                    client=client,
+                    streaming_url=streaming_url,
+                    token=token,
+                    session_id=transcode_session,
+                    client_id=client_id,
+                )
+
+            # Enviar timeline a Plex
             ok = await report_plex_timeline(
                 client=client,
                 url=discovery_url,
@@ -149,13 +181,14 @@ async def _heartbeat_worker(
                 duration_ms=duration_ms,
                 client_id=client_id,
                 device_name=device_name,
+                transcode_session=transcode_session,
             )
 
             if not ok:
                 consecutive_errors += 1
-                if consecutive_errors >= 3:
+                if consecutive_errors >= 5:
                     logger.info(
-                        'Deteniendo heartbeat de Plex para %s tras 3 fallos consecutivos',
+                        'Deteniendo heartbeat de Plex para %s tras 5 fallos consecutivos',
                         session_id,
                     )
                     break
@@ -166,23 +199,10 @@ async def _heartbeat_worker(
                 _active_playbacks[session_id]['current_time_ms'] = elapsed_ms
                 _active_playbacks[session_id]['last_heartbeat'] = now
     except asyncio.CancelledError:
-        logger.debug('Heartbeat cancelado para %s, notificando parada a Plex', session_id)
-        try:
-            now = time.time()
-            elapsed_ms = int((now - started_at) * 1000)
-            await report_plex_timeline(
-                client=client,
-                url=discovery_url,
-                token=token,
-                rating_key=rating_key,
-                state='stopped',
-                time_ms=elapsed_ms,
-                duration_ms=duration_ms,
-                client_id=client_id,
-                device_name=device_name,
-            )
-        except Exception as stop_err:
-            logger.debug('No se pudo reportar stopped al cancelar %s: %s', session_id, stop_err)
+        # IMPORTANTE: Al ser cancelado por una nueva petición o refresco de fragmentos,
+        # NO reportar 'stopped' a Plex de inmediato, ya que Plex destruiría el proceso Plex Transcoder
+        # y borraría los archivos temporales .ts, causando el error HTTP 404 en ExoPlayer / Stremio.
+        logger.debug('Heartbeat cancelado o reemplazado para %s (sin notificar stopped prematuramente)', session_id)
     except Exception as exc:
         logger.error('Error en heartbeat_worker para %s: %s', session_id, exc)
     finally:
@@ -201,17 +221,29 @@ def start_plex_heartbeat(
     rating_key: str,
     duration_ms: int = 0,
     client_id: str = '',
+    streaming_url: URL | None = None,
+    transcode_session: str = '',
 ) -> None:
-    """Inicia el heartbeat en segundo plano hacia Plex con ciclo de vida controlado."""
+    """Inicia o refresca el heartbeat en segundo plano hacia Plex con ciclo de vida controlado."""
     if not rating_key or not token or not discovery_url:
         return
 
     session_id = f"{customer_id}_{rating_key}"
 
-    # Cancelar cualquier tarea previa del mismo cliente para no acumular ráfagas hacia Plex
+    # Si ya existe un worker activo para este mismo cliente y rating_key, solo refrescar actividad
+    # sin destruirlo para evitar matar la sesión transcode en Plex
+    existing_task = _running_heartbeats.get(session_id)
+    if existing_task and not existing_task.done():
+        if session_id in _active_playbacks:
+            _active_playbacks[session_id]['last_heartbeat'] = time.time()
+            if transcode_session:
+                _active_playbacks[session_id]['transcode_session'] = transcode_session
+        return
+
+    # Cancelar tareas huérfanas de OTRAS películas/series del mismo cliente
     user_prefix = f"{customer_id}_"
     for sid, prev_task in list(_running_heartbeats.items()):
-        if sid.startswith(user_prefix) and not prev_task.done():
+        if sid.startswith(user_prefix) and sid != session_id and not prev_task.done():
             prev_task.cancel()
 
     effective_client_id = client_id or f'stremio-c{customer_id}'
@@ -223,6 +255,7 @@ def start_plex_heartbeat(
         rating_key=rating_key,
         duration_ms=duration_ms,
         client_id=effective_client_id,
+        transcode_session=transcode_session,
     )
 
     started_at = time.time()
@@ -237,6 +270,8 @@ def start_plex_heartbeat(
             client_id=effective_client_id,
             device_name=device_name,
             started_at=started_at,
+            streaming_url=streaming_url,
+            transcode_session=transcode_session,
         )
     )
     _running_heartbeats[session_id] = task

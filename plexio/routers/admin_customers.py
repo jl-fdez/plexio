@@ -463,17 +463,39 @@ async def list_customer_devices(
     result = await db.execute(stmt)
     devices = result.scalars().all()
 
-    return [
-        {
+    output = []
+    for d in devices:
+        # Detectar qué otros clientes comparten este mismo dispositivo físico
+        shared_filter = (
+            (CustomerDevice.device_id == d.device_id)
+            if d.device_id
+            else (CustomerDevice.device_fingerprint == d.device_fingerprint)
+        )
+        stmt_shared = (
+            select(Customer.id, Customer.name)
+            .join(CustomerDevice, CustomerDevice.customer_id == Customer.id)
+            .where(
+                CustomerDevice.customer_id != customer_id,
+                shared_filter,
+            )
+            .distinct()
+        )
+        res_shared = await db.execute(stmt_shared)
+        shared_users = [{'id': row[0], 'name': row[1]} for row in res_shared.all()]
+
+        output.append({
             'id': d.id,
+            'device_id': d.device_id,
             'device_name': d.device_name,
             'ip_address': d.ip_address,
             'user_agent': d.user_agent,
             'last_active': d.last_active,
             'created_at': d.created_at,
-        }
-        for d in devices
-    ]
+            'is_shared': len(shared_users) > 0,
+            'shared_with': shared_users,
+        })
+
+    return output
 
 
 @router.delete('/customers/{customer_id}/devices/{device_id}')

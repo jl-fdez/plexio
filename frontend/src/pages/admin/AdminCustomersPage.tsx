@@ -1066,12 +1066,27 @@ export const AdminCustomersPage: FC = () => {
                           {isTV ? <Tv className="w-4 h-4" /> : isPC ? <Laptop className="w-4 h-4" /> : <Smartphone className="w-4 h-4" />}
                         </div>
                         <div>
-                          <div className="text-sm font-semibold text-white">{dev.device_name}</div>
+                          <div className="text-sm font-semibold text-white flex items-center gap-2">
+                            <span>{dev.device_name}</span>
+                            {dev.is_shared && (
+                              <span className="px-1.5 py-0.5 text-[10px] font-medium bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-md">
+                                Multiusuario
+                              </span>
+                            )}
+                          </div>
                           <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
                             <span>IP: {dev.ip_address || 'Desconocida'}</span>
                             <span>•</span>
                             <span>Activo: {lastActiveDate.toLocaleDateString()} {lastActiveDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                           </div>
+                          {dev.is_shared && dev.shared_with && dev.shared_with.length > 0 && (
+                            <div className="text-[11px] text-indigo-300/90 mt-1 flex items-center gap-1">
+                              <span>Compartido con:</span>
+                              <span className="font-medium text-slate-200">
+                                {dev.shared_with.map((u) => u.name).join(', ')}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </div>
 

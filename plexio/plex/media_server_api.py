@@ -299,6 +299,7 @@ async def report_plex_timeline(
     duration_ms: int = 0,
     client_id: str = '',
     device_name: str = '',
+    transcode_session: str = '',
 ) -> bool:
     """
     Envía un reporte de estado de reproducción al endpoint /:/timeline de Plex Media Server
@@ -318,6 +319,9 @@ async def report_plex_timeline(
             'X-Plex-Device': device_name or 'Stremio',
             'Accept': 'application/json',
         }
+        if transcode_session:
+            headers['X-Plex-Session-Identifier'] = transcode_session
+
         params = {
             'ratingKey': str(rating_key),
             'key': f'/library/metadata/{rating_key}',
@@ -328,6 +332,10 @@ async def report_plex_timeline(
             'X-Plex-Client-Identifier': client_id or 'stremio-client',
             'X-Plex-Device-Name': device_name or 'Stremio',
         }
+        if transcode_session:
+            params['session'] = transcode_session
+            params['transcodeSession'] = transcode_session
+
         async with client.get(
             timeline_url,
             headers=headers,
@@ -344,6 +352,34 @@ async def report_plex_timeline(
             return resp.status in (200, 201)
     except Exception as err:
         logger.error('Error reportando timeline a Plex para ratingKey %s: %s', rating_key, err)
+        return False
+
+
+async def ping_plex_transcode(
+    *,
+    client: ClientSession,
+    streaming_url: URL,
+    token: str,
+    session_id: str,
+    client_id: str = '',
+) -> bool:
+    """
+    Envía un ping de keep-alive a Plex Universal Transcoder.
+    Evita que el Transcode Reaper de Plex destruya la sesión HLS y provoque errores 404 en fragmentos .ts.
+    """
+    if not session_id or not token or not streaming_url:
+        return False
+    try:
+        ping_url = streaming_url / 'video/:/transcode/universal/ping'
+        params = {
+            'session': session_id,
+            'X-Plex-Token': token,
+            'X-Plex-Client-Identifier': client_id or 'stremio-client',
+        }
+        async with client.get(ping_url, params=params, timeout=5) as resp:
+            return resp.status in (200, 204)
+    except Exception as ping_err:
+        logger.debug('Ping de transcode a Plex no respondió (no crítico): %s', ping_err)
         return False
 
 

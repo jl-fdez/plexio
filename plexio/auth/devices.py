@@ -6,7 +6,7 @@ from fastapi import Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from plexio.db.models import Customer, CustomerDevice
+from plexio.db.models import Customer, CustomerDevice, Device
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ def get_client_ip(request: Request) -> str:
 
 
 def parse_device_name(user_agent: str, ip: str) -> str:
-    ua = user_agent.lower()
+    ua = (user_agent or '').lower()
     if 'android' in ua:
         if 'tv' in ua or 'box' in ua or 'aft' in ua:
             return 'Android TV / TV Box'
@@ -45,7 +45,7 @@ def parse_device_name(user_agent: str, ip: str) -> str:
         return 'Amazon Fire TV Stick'
     elif 'tizen' in ua or 'samsung' in ua:
         return 'Samsung Smart TV'
-    elif 'web0s' in ua or 'lg' in ua:
+    elif 'web0s' in ua or 'webos' in ua or 'lg' in ua:
         return 'LG Smart TV'
     elif 'linux' in ua:
         return 'Stremio en Linux'
@@ -79,8 +79,21 @@ def get_device_platform_category(user_agent: str) -> str:
     return 'other'
 
 
+def generate_physical_fingerprint(user_agent: str, ip: str) -> str:
+    """
+    Huella digital física independiente del cliente.
+    Identifica el hardware real y la red para que múltiples usuarios
+    puedan compartir el mismo dispositivo físico a la vez.
+    """
+    category = get_device_platform_category(user_agent)
+    clean_ua = (user_agent or 'Unknown').strip().lower()
+    norm_ip = (ip or '0.0.0.0').strip()
+    raw = f'{category}_{clean_ua}_{norm_ip}'.encode('utf-8')
+    return hashlib.sha256(raw).hexdigest()[:32]
+
+
 def generate_fingerprint(customer_id: int, user_agent: str) -> str:
-    # Huella digital basada en cliente y User-Agent normalizado por plataforma
+    """Compatibilidad con huellas previas."""
     category = get_device_platform_category(user_agent)
     clean_ua = (user_agent or 'Unknown').strip().lower()
     raw = f'{customer_id}_{category}_{clean_ua}'.encode('utf-8')
@@ -96,60 +109,114 @@ async def check_and_register_device(
     db: AsyncSession,
 ) -> tuple[bool, str]:
     """
-    Verifica si el dispositivo tiene permitido el acceso según customer.max_devices.
+    Verifica si el dispositivo físico tiene permitido el acceso según customer.max_devices.
     Retorna (is_allowed, device_name_or_error_message).
-    Agrupa inteligentemente múltiples peticiones del mismo dispositivo físico (interfaz + reproductor).
+
+    Soporta explícitamente:
+    1. Que MÚLTIPLES usuarios puedan usar un mismo dispositivo a la vez.
+    2. Que UN dispositivo físico tenga múltiples usuarios asociados a la vez.
     """
     ip = get_client_ip(request)
     ua = request.headers.get('user-agent', 'Desconocido')
     req_category = get_device_platform_category(ua)
-    fingerprint = generate_fingerprint(customer.id, ua)
+    physical_fp = generate_physical_fingerprint(ua, ip)
+    dev_name = parse_device_name(ua, ip)
 
-    # 1. Buscar si este dispositivo ya está registrado por huella exacta
-    stmt = select(CustomerDevice).where(
-        CustomerDevice.customer_id == customer.id,
-        CustomerDevice.device_fingerprint == fingerprint,
-    )
-    result = await db.execute(stmt)
-    existing_device = result.scalars().first()
+    # 1. Localizar o registrar el dispositivo físico global (Device)
+    stmt_dev = select(Device).where(Device.device_fingerprint == physical_fp)
+    res_dev = await db.execute(stmt_dev)
+    physical_device = res_dev.scalars().first()
 
-    # 2. Si no hay huella exacta pero coincide la misma IP y la misma familia de plataforma
-    # (ej: Stremio UI y su reproductor integrado ExoPlayer/MPV en la misma máquina o TV)
-    if not existing_device and ip and ip != '0.0.0.0':
-        ip_stmt = select(CustomerDevice).where(
-            CustomerDevice.customer_id == customer.id,
-            CustomerDevice.ip_address == ip,
-        )
+    # Si no coincide la huella exacta, buscar por IP y categoría si la IP es válida
+    if not physical_device and ip and ip != '0.0.0.0':
+        ip_stmt = select(Device).where(Device.ip_address == ip)
         res_ip = await db.execute(ip_stmt)
         for dev in res_ip.scalars().all():
             dev_cat = get_device_platform_category(dev.user_agent or '')
             if dev_cat == req_category or (
                 req_category in ('android', 'windows') and dev_cat in ('android', 'windows')
             ):
-                existing_device = dev
+                physical_device = dev
                 break
 
-    if existing_device:
-        # Throttling en memoria: si ya se actualizó en los últimos 60s, omitir por completo
-        # la escritura en DB para evitar contención de bloqueos con ráfagas concurrentes (/catalog, /meta, /stream)
-        now_ts = time.time()
-        if existing_device.id and (now_ts - _last_device_update.get(existing_device.id, 0)) < 60:
-            return True, existing_device.device_name
+    if not physical_device:
+        physical_device = Device(
+            device_fingerprint=physical_fp,
+            device_name=dev_name,
+            ip_address=ip,
+            user_agent=ua[:500] if ua else None,
+            last_active=datetime.utcnow(),
+        )
+        try:
+            db.add(physical_device)
+            await db.flush()
+        except Exception as add_dev_err:
+            try:
+                await db.rollback()
+            except Exception:
+                pass
+            logger.warning('Aviso: no se pudo persistir physical_device nuevo: %s', add_dev_err)
+            # Reintentar obtener por huella si hubo inserción concurrente
+            stmt_retry = select(Device).where(Device.device_fingerprint == physical_fp)
+            physical_device = (await db.execute(stmt_retry)).scalars().first()
 
-        # Dispositivo ya conocido: actualizar última actividad e IP solo si es necesario (throttling 60s)
-        # Esto previene ráfagas de escrituras concurrentes que bloquean SQLite (/catalog, /meta, /stream simultáneos)
+    phys_id = physical_device.id if physical_device else None
+
+    # 2. Buscar si este cliente (Customer) ya tiene vinculado este dispositivo físico
+    existing_link = None
+    if phys_id:
+        link_stmt = select(CustomerDevice).where(
+            CustomerDevice.customer_id == customer.id,
+            CustomerDevice.device_id == phys_id,
+        )
+        existing_link = (await db.execute(link_stmt)).scalars().first()
+
+    if not existing_link:
+        # Fallback de búsqueda por huella física o IP previa para el cliente
+        stmt_fp = select(CustomerDevice).where(
+            CustomerDevice.customer_id == customer.id,
+            CustomerDevice.device_fingerprint == physical_fp,
+        )
+        existing_link = (await db.execute(stmt_fp)).scalars().first()
+
+    if not existing_link and ip and ip != '0.0.0.0':
+        stmt_link_ip = select(CustomerDevice).where(
+            CustomerDevice.customer_id == customer.id,
+            CustomerDevice.ip_address == ip,
+        )
+        for cand in (await db.execute(stmt_link_ip)).scalars().all():
+            cand_cat = get_device_platform_category(cand.user_agent or '')
+            if cand_cat == req_category:
+                existing_link = cand
+                break
+
+    # 3. Si el dispositivo ya está vinculado a este cliente: permitir acceso inmediato y actualizar timestamps
+    if existing_link:
+        now_ts = time.time()
+        # Throttling en memoria: no escribir en DB en cada request para no saturar SQLite
+        if existing_link.id and (now_ts - _last_device_update.get(existing_link.id, 0)) < 60:
+            return True, existing_link.device_name
+
         now = datetime.utcnow()
         needs_update = False
-        if not existing_device.last_active or (now - existing_device.last_active).total_seconds() > 60:
-            existing_device.last_active = now
+        if not existing_link.last_active or (now - existing_link.last_active).total_seconds() > 60:
+            existing_link.last_active = now
             needs_update = True
-        if ip and ip != '0.0.0.0' and existing_device.ip_address != ip:
-            existing_device.ip_address = ip
+        if ip and ip != '0.0.0.0' and existing_link.ip_address != ip:
+            existing_link.ip_address = ip
+            needs_update = True
+        if phys_id and not existing_link.device_id:
+            existing_link.device_id = phys_id
             needs_update = True
 
+        if physical_device:
+            physical_device.last_active = now
+            if ip and ip != '0.0.0.0':
+                physical_device.ip_address = ip
+
         if needs_update:
-            if existing_device.id:
-                _last_device_update[existing_device.id] = now_ts
+            if existing_link.id:
+                _last_device_update[existing_link.id] = now_ts
             try:
                 await db.flush()
             except Exception as flush_err:
@@ -157,16 +224,14 @@ async def check_and_register_device(
                     await db.rollback()
                 except Exception:
                     pass
-                logger.warning('Aviso: no se pudo actualizar last_active del dispositivo %s: %s', existing_device.id, flush_err)
-        return True, existing_device.device_name
+                logger.warning('Aviso: no se pudo actualizar last_active del dispositivo %s: %s', existing_link.id, flush_err)
+        return True, existing_link.device_name
 
-    # 3. Si es un dispositivo nuevo, contar cuántos tiene actualmente
+    # 4. Es un nuevo dispositivo para este cliente: verificar límite de dispositivos del cliente
     count_stmt = select(func.count(CustomerDevice.id)).where(
         CustomerDevice.customer_id == customer.id
     )
     current_device_count = (await db.execute(count_stmt)).scalar_one()
-
-    # 4. Comprobar límite de dispositivos
     max_allowed = customer.max_devices if customer.max_devices and customer.max_devices > 0 else 1
 
     if current_device_count >= max_allowed:
@@ -176,26 +241,26 @@ async def check_and_register_device(
             f'Contacta a tu proveedor para ampliar tu plan o desvincular dispositivos.',
         )
 
-    # 5. Registrar nuevo dispositivo
-    device_name = parse_device_name(ua, ip)
-    new_device = CustomerDevice(
+    # 5. Vincular este dispositivo físico a este cliente (un dispositivo físico con múltiples usuarios)
+    new_link = CustomerDevice(
         customer_id=customer.id,
-        device_fingerprint=fingerprint,
-        device_name=device_name,
+        device_id=phys_id,
+        device_fingerprint=physical_fp,
+        device_name=dev_name,
         ip_address=ip,
         user_agent=ua[:500] if ua else None,
         last_active=datetime.utcnow(),
     )
     try:
-        db.add(new_device)
+        db.add(new_link)
         await db.flush()
-        if new_device.id:
-            _last_device_update[new_device.id] = time.time()
+        if new_link.id:
+            _last_device_update[new_link.id] = time.time()
     except Exception as add_err:
         try:
             await db.rollback()
         except Exception:
             pass
-        logger.warning('Error al persistir nuevo dispositivo: %s', add_err)
+        logger.warning('Error al persistir vinculación de dispositivo: %s', add_err)
 
-    return True, device_name
+    return True, dev_name

@@ -31,11 +31,14 @@ export interface CustomerItem {
 
 export interface CustomerDeviceItem {
   id: number;
+  device_id?: number | null;
   device_name: string;
   ip_address: string | null;
   user_agent: string | null;
   last_active: string;
   created_at: string;
+  is_shared?: boolean;
+  shared_with?: Array<{ id: number; name: string }>;
 }
 
 export interface CreateCustomerPayload {

@@ -380,7 +380,11 @@ class PlexMediaMeta(BaseModel):
                     c_token = getattr(customer, 'uuid_token', '')
                     quoted_part = urllib.parse.quote(part_key, safe='')
                     quoted_key = urllib.parse.quote(self_key, safe='')
-                    hls_stream_url = f"{api_base_url.rstrip('/')}/u/{c_token}/play/{effective_rk}/stream.m3u8?part_key={quoted_part}&media_key={quoted_key}&media_index={i}"
+                    playback_sid = uuid.uuid4().hex[:8]
+                    hls_stream_url = (
+                        f"{api_base_url.rstrip('/')}/u/{c_token}/play/{effective_rk}/stream.m3u8"
+                        f"?part_key={quoted_part}&media_key={quoted_key}&media_index={i}&sid={playback_sid}"
+                    )
                 else:
                     hls_stream_url = str(transcode_url % {'videoQuality': 100})
 

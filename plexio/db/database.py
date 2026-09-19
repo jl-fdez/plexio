@@ -98,6 +98,11 @@ def _run_migrations(sync_conn):
         if 'customer_name' not in existing_cols:
             sync_conn.exec_driver_sql('ALTER TABLE payment_records ADD COLUMN customer_name VARCHAR(255)')
 
+    if 'customer_devices' in existing_tables:
+        existing_cols = {col['name'] for col in inspector.get_columns('customer_devices')}
+        if 'device_id' not in existing_cols:
+            sync_conn.exec_driver_sql('ALTER TABLE customer_devices ADD COLUMN device_id INTEGER')
+
 
 async def init_db():
     async with engine.begin() as conn:
