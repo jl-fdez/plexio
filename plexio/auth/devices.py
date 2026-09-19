@@ -76,6 +76,8 @@ def get_device_platform_category(user_agent: str) -> str:
         return 'ios'
     if 'linux' in ua:
         return 'linux'
+    if 'stremio' in ua:
+        return 'stremio_app'
     return 'other'
 
 
@@ -86,9 +88,8 @@ def generate_physical_fingerprint(user_agent: str, ip: str) -> str:
     puedan compartir el mismo dispositivo físico a la vez.
     """
     category = get_device_platform_category(user_agent)
-    clean_ua = (user_agent or 'Unknown').strip().lower()
     norm_ip = (ip or '0.0.0.0').strip()
-    raw = f'{category}_{clean_ua}_{norm_ip}'.encode('utf-8')
+    raw = f'{category}_{norm_ip}'.encode('utf-8')
     return hashlib.sha256(raw).hexdigest()[:32]
 
 
@@ -133,8 +134,11 @@ async def check_and_register_device(
         res_ip = await db.execute(ip_stmt)
         for dev in res_ip.scalars().all():
             dev_cat = get_device_platform_category(dev.user_agent or '')
-            if dev_cat == req_category or (
-                req_category in ('android', 'windows') and dev_cat in ('android', 'windows')
+            if (
+                dev_cat == req_category
+                or dev_cat in ('other', 'stremio_app')
+                or req_category in ('other', 'stremio_app')
+                or (req_category in ('android', 'windows') and dev_cat in ('android', 'windows'))
             ):
                 physical_device = dev
                 break
@@ -186,7 +190,12 @@ async def check_and_register_device(
         )
         for cand in (await db.execute(stmt_link_ip)).scalars().all():
             cand_cat = get_device_platform_category(cand.user_agent or '')
-            if cand_cat == req_category:
+            if (
+                cand_cat == req_category
+                or cand_cat in ('other', 'stremio_app')
+                or req_category in ('other', 'stremio_app')
+                or (req_category in ('android', 'windows') and cand_cat in ('android', 'windows'))
+            ):
                 existing_link = cand
                 break
 

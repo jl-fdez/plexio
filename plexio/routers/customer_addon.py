@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 import uuid
 from datetime import datetime
 from itertools import chain
@@ -680,7 +681,6 @@ async def play_customer_hls_stream(
         'protocol': 'hls',
         'fastSeek': 1,
         'copyts': 1,
-        'hasMDE': 1,
         'autoAdjustQuality': 0,
         'directPlay': 0,
         'directStream': 1,
